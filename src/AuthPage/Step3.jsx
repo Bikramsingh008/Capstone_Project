@@ -73,7 +73,7 @@ export default function Step3({ formData, updateForm, next, back }) {
           </div>
         </div>
 
-        {/* Adherence */}
+        {/* Adherence */}zz
         <div>
           <p className="mb-2 font-medium">Do you follow prescription?</p>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">

@@ -13,106 +13,124 @@ export default function Step1({ formData, updateForm, next }) {
           <Activity size={40} color="#1FBCF9" />
           <h1 className="text-3xl font-semibold">Arogya</h1>
         </div>
-        
 
-        {/* Header */}
         <div className="text-center space-y-2">
-          <h2 className="text-2xl font-bold">Complete your profile</h2>
-          <p className="text-sm text-gray-400">
-            Please provide the following information
-          </p>
+          <h2 className="text-2xl font-bold">Create Your Account</h2>
         </div>
 
-        {/* Progress */}
         <Progress current={1} />
 
+        {/* Username */}
+        <input
+          type="text"
+          placeholder="Username"
+          value={formData.username}
+          onChange={(e) => updateForm({ username: e.target.value })}
+          className="w-full p-3 rounded-md bg-black border border-gray-600"
+        />
+
+        {/* Password */}
+        <input
+          type="password"
+          placeholder="Password"
+          value={formData.password}
+          onChange={(e) => updateForm({ password: e.target.value })}
+          className="w-full p-3 rounded-md bg-black border border-gray-600"
+        />
+
+        {/* Age */}
+        <input
+          type="number"
+          placeholder="Age"
+          value={formData.age}
+          onChange={(e) => updateForm({ age: e.target.value })}
+          className="w-full p-3 rounded-md bg-black border border-gray-600"
+        />
+
+        {/* Weight */}
+        <input
+          type="number"
+          placeholder="Weight (kg)"
+          value={formData.weight}
+          onChange={(e) => updateForm({ weight: e.target.value })}
+          className="w-full p-3 rounded-md bg-black border border-gray-600"
+        />
+
+        {/* Height */}
+        <input
+          type="number"
+          placeholder="Height (cm)"
+          value={formData.height}
+          onChange={(e) => updateForm({ height: e.target.value })}
+          className="w-full p-3 rounded-md bg-black border border-gray-600"
+        />
+
+        {/* Blood Group */}
+        <select
+          value={formData.bloodGroup}
+          onChange={(e) => updateForm({ bloodGroup: e.target.value })}
+          className="w-full p-3 rounded-md bg-black border border-gray-600"
+        >
+          <option value="">Select Blood Group</option>
+          {bloodGroups.map((bg) => (
+            <option key={bg} value={bg}>
+              {bg}
+            </option>
+          ))}
+        </select>
+
         {/* Gender */}
-        <div>
-          <p className="mb-3 font-medium">Specify your gender</p>
-          <div className="grid grid-cols-3 gap-4">
-            {["Male", "Female", "Other"].map((g) => (
-              <button
-                key={g}
-                type="button"
-                onClick={() => updateForm({ gender: g })}
-                className={`py-3 rounded-md transition ${
-                  formData.gender === g
-                    ? "bg-[#ebf0f2] text-black"
-                    : "bg-[#1FBCF9]/80 text-white hover:bg-[#1FBCF9]"
-                }`}
-              >
-                {g}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Inputs Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-          {/* Weight */}
-          <div>
-            <p className="mb-2 text-sm font-medium">Weight (kg)</p>
-            <input
-              type="number"
-              placeholder="e.g. 45"
-              value={formData.weight}
-              onChange={(e) => updateForm({ weight: e.target.value })}
-              className="w-full p-3 rounded-md bg-black border border-gray-600 focus:outline-none focus:border-[#1FBCF9]"
-            />
-          </div>
-
-          {/* Height */}
-          <div>
-            <p className="mb-2 text-sm font-medium">Height (cm)</p>
-            <input
-              type="number"
-              placeholder="e.g. 160"
-              value={formData.height}
-              onChange={(e) => updateForm({ height: e.target.value })}
-              className="w-full p-3 rounded-md bg-black border border-gray-600 focus:outline-none focus:border-[#1FBCF9]"
-            />
-          </div>
-
-          {/* Age */}
-          <div>
-            <p className="mb-2 text-sm font-medium">What is your age?</p>
-            <input
-              type="number"
-              placeholder="e.g. 18"
-              value={formData.age}
-              onChange={(e) => updateForm({ age: e.target.value })}
-              className="w-full p-3 rounded-md bg-black border border-gray-600 focus:outline-none focus:border-[#1FBCF9]"
-            />
-          </div>
-
-          {/* Blood Group */}
-          <div>
-            <p className="mb-2 text-sm font-medium">Your blood group</p>
-            <select
-              value={formData.bloodGroup}
-              onChange={(e) => updateForm({ bloodGroup: e.target.value })}
-              className="w-full p-3 rounded-md bg-[#1FBCF9] text-white focus:outline-none"
+        <div className="grid grid-cols-3 gap-4">
+          {["Male", "Female", "Other"].map((g) => (
+            <button
+              key={g}
+              type="button"
+              onClick={() => updateForm({ gender: g })}
+              className={`py-3 rounded-md ${
+                formData.gender === g
+                  ? "bg-white text-black"
+                  : "bg-[#1FBCF9]/80"
+              }`}
             >
-              <option value="">Select blood group</option>
-              {bloodGroups.map((bg) => (
-                <option key={bg} value={bg}>
-                  {bg}
-                </option>
-              ))}
-            </select>
-          </div>
+              {g}
+            </button>
+          ))}
         </div>
 
-        {/* Next Button */}
-        <div className="flex justify-end pt-4">
+        {/* Blood Pressure */}
+        <div className="grid grid-cols-2 gap-4">
+          <input
+            type="number"
+            placeholder="Systolic (120)"
+            value={formData.systolic}
+            onChange={(e) => updateForm({ systolic: e.target.value })}
+            className="p-3 rounded-md bg-black border border-gray-600"
+          />
+          <input
+            type="number"
+            placeholder="Diastolic (80)"
+            value={formData.diastolic}
+            onChange={(e) => updateForm({ diastolic: e.target.value })}
+            className="p-3 rounded-md bg-black border border-gray-600"
+          />
+        </div>
+
+        {/* Show BMI */}
+        {formData.bmi && (
+          <p className="text-sm text-gray-400">
+            Calculated BMI: {formData.bmi}
+          </p>
+        )}
+
+        <div className="flex justify-end">
           <button
             onClick={next}
-            className="px-6 py-2 bg-[#1FBCF9] rounded-md hover:bg-[#19a7e0] transition"
+            className="px-6 py-2 bg-[#1FBCF9] rounded-md"
           >
             Next
           </button>
         </div>
+
       </div>
     </div>
   );

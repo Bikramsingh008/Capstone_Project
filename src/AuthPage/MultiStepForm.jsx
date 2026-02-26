@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Step1 from "./Step1";
 import Step2 from "./Step2";
 import Step3 from "./Step3";
@@ -9,12 +9,19 @@ function MultiStepForm() {
   const [step, setStep] = useState(1);
 
   const [formData, setFormData] = useState({
+    bloodGroup: "",
+    bmi: "",
+    username: "",
+    password: "",
     gender: "",
     age: "",
     weight: "",
     height: "",
+    systolic: "",
+    diastolic: "",
+    bmi: "",
     bloodGroup: "",
-    symptom: [],
+    symptom: "",
     symptomDuration: "",
     symptomIntensity: "",
     medicines: "",
@@ -33,17 +40,64 @@ function MultiStepForm() {
     setFormData((prev) => ({ ...prev, ...data }));
   };
 
+  // BMI AUTO CALCULATE
+  useEffect(() => {
+    if (formData.height && formData.weight) {
+      const h = formData.height / 100;
+      const bmiValue = formData.weight / (h * h);
+      setFormData((prev) => ({
+        ...prev,
+        bmi: bmiValue.toFixed(1),
+      }));
+    }
+  }, [formData.height, formData.weight]);
+
   const handleSubmit = () => {
-    localStorage.setItem("patientData", JSON.stringify(formData));
+    const users = JSON.parse(localStorage.getItem("users")) || [];
+
+    const usernameExists = users.find((u) => u.username === formData.username);
+
+    if (usernameExists) {
+      alert("Username already exists");
+      return;
+    }
+
+    users.push(formData);
+    localStorage.setItem("users", JSON.stringify(users));
+    localStorage.setItem("currentUser", JSON.stringify(formData));
+
     next();
   };
 
   return (
     <div className="min-h-screen bg-black text-white">
-      {step === 1 && <Step1 formData={formData} updateForm={updateForm} next={next} />}
-      {step === 2 && <Step2 formData={formData} updateForm={updateForm} next={next} back={back} />}
-      {step === 3 && <Step3 formData={formData} updateForm={updateForm} next={next} back={back} />}
-      {step === 4 && <Step4 formData={formData} updateForm={updateForm} submit={handleSubmit} back={back} />}
+      {step === 1 && (
+        <Step1 formData={formData} updateForm={updateForm} next={next} />
+      )}
+      {step === 2 && (
+        <Step2
+          formData={formData}
+          updateForm={updateForm}
+          next={next}
+          back={back}
+        />
+      )}
+      {step === 3 && (
+        <Step3
+          formData={formData}
+          updateForm={updateForm}
+          next={next}
+          back={back}
+        />
+      )}
+      {step === 4 && (
+        <Step4
+          formData={formData}
+          updateForm={updateForm}
+          submit={handleSubmit}
+          back={back}
+        />
+      )}
       {step === 5 && <Step5 />}
     </div>
   );
