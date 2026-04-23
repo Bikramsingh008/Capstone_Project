@@ -1,13 +1,13 @@
 const cron = require('node-cron');
-const db = require('./database');
 const mailer = require('./mailer');
 const sms = require('./sms');
+const Medication = require('./models/Medication');
 
 function startCronJobs() {
     console.log("Cron Scheduler Initialized. Waiting for triggers...");
 
     // Run every minute
-    cron.schedule('* * * * *', () => {
+    cron.schedule('* * * * *', async () => {
         const now = new Date();
         const hours = String(now.getHours()).padStart(2, '0');
         const minutes = String(now.getMinutes()).padStart(2, '0');
@@ -15,40 +15,32 @@ function startCronJobs() {
 
         console.log(`[CRON TICK] Checking medication schedules for exact time: ${currentTime}...`);
 
-        // Query medications alongside user contact info
-        const query = `
-            SELECT m.name, m.dosage, m.frequency, m.time, u.email, u.phone, u.username
-            FROM medications m
-            JOIN users u ON m.user_id = u.id
-            WHERE m.time = ?
-        `;
+        try {
+            const medications = await Medication.find({ time: currentTime }).populate('user_id');
 
-        db.all(query, [currentTime], (err, rows) => {
-            if (err) {
-                console.error("[CRON DB ERROR]", err);
-                return;
-            }
-
-            if (rows.length > 0) {
-                console.log(`[CRON FIRE] Found ${rows.length} medication(s) matching exactly ${currentTime}. Dispatching protocols...`);
+            if (medications.length > 0) {
+                console.log(`[CRON FIRE] Found ${medications.length} medication(s) matching exactly ${currentTime}. Dispatching protocols...`);
                 
-                rows.forEach(scheduledMedication => {
-                    const message = `PAGING ${scheduledMedication.username.toUpperCase()}! It is exactly ${currentTime}. Time to take your medication: \n\nMedicine: ${scheduledMedication.name} (${scheduledMedication.dosage})\nFrequency: ${scheduledMedication.frequency}\n\nPlease consume your medication immediately and log any symptoms in your Arogya Dashboard!`;
+                medications.forEach(med => {
+                    if (!med.user_id) return;
+                    
+                    const message = `PAGING ${med.user_id.username.toUpperCase()}! It is exactly ${currentTime}. Time to take your medication: \n\nMedicine: ${med.name} (${med.dosage})\nFrequency: ${med.frequency}\n\nPlease consume your medication immediately and log any symptoms in your Arogya Dashboard!`;
 
-                    // Dispatch Automations natively into network streams
                     mailer.sendNotification(
-                        scheduledMedication.email,
+                        med.user_id.email,
                         "URGENT: Time To Take Your Medication! [Arogya System]",
                         message
                     );
 
                     sms.sendSMS(
-                        scheduledMedication.phone,
-                        `Arogya Med-Alert for ${scheduledMedication.username}! Time to take your ${scheduledMedication.name} (${scheduledMedication.dosage}) right now!`
+                        med.user_id.phone,
+                        `Arogya Med-Alert for ${med.user_id.username}! Time to take your ${med.name} (${med.dosage}) right now!`
                     );
                 });
             }
-        });
+        } catch (err) {
+            console.error("[CRON DB ERROR]", err);
+        }
     });
 }
 

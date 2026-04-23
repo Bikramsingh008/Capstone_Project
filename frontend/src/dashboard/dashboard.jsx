@@ -7,6 +7,7 @@ import ChatAssistant from "./ChatAssistant";
 import HealthReports from "./HealthReports";
 import MedicationManager from "./MedicationManager";
 import WellnessTips from "./WellnessTips";
+import MentalWellness from "./MentalWellness";
 
 function Dashboard() {
   const [data, setData] = useState(null);
@@ -72,19 +73,20 @@ function Dashboard() {
       <div className="min-h-screen bg-black text-white pt-28 px-6 pb-20">
         
         {/* Tab Navigation */}
-        <div className="max-w-6xl mx-auto mb-8 bg-white/5 p-2 rounded-xl border border-white/10 flex flex-wrap gap-2 justify-center shadow-[0_0_20px_rgba(31,188,249,0.1)]">
+        <div className="max-w-6xl mx-auto mb-8 bg-white/5 p-2 rounded-xl border border-white/10 flex overflow-x-auto whitespace-nowrap gap-2 justify-start lg:justify-center shadow-[0_0_20px_rgba(31,188,249,0.1)]">
           {[
             { id: 'profile', icon: '👤', label: 'My Profile' },
             { id: 'reports', icon: '🩺', label: 'Symptom Tracking & Reports' },
             { id: 'medications', icon: '💊', label: 'Medications' },
             { id: 'wellness', icon: '❤️', label: 'Wellness Tips' },
+            { id: 'mentalWellness', icon: '🧠', label: 'Mental Wellness Engine' },
             { id: 'chat', icon: '✨', label: 'AI Recommendations (Chat)' },
             { id: 'doctors', icon: '👨‍⚕️', label: 'Book Doctor' }
           ].map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 rounded-lg font-semibold flex items-center transition-all ${
+              className={`flex-shrink-0 whitespace-nowrap px-4 py-2 rounded-lg font-semibold flex items-center transition-all ${
                 activeTab === tab.id 
                   ? 'bg-[#1FBCF9] text-white shadow-[0_0_15px_rgba(31,188,249,0.5)]' 
                   : 'text-gray-400 hover:text-white hover:bg-white/10'
@@ -159,6 +161,9 @@ function Dashboard() {
 
           {/* WELLNESS TIPS VIEW */}
           {activeTab === "wellness" && <WellnessTips />}
+
+          {/* MENTAL WELLNESS ENGINE VIEW */}
+          {activeTab === "mentalWellness" && <MentalWellness data={data} />}
 
           {/* AI CHAT VIEW */}
           {activeTab === "chat" && <div className="max-w-3xl mx-auto"><ChatAssistant data={data} /></div>}

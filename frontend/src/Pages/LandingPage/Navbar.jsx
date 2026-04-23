@@ -1,5 +1,5 @@
 import { Activity } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
 const navLinks = [
@@ -11,7 +11,20 @@ const navLinks = [
 
 function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
+  const [isLogged, setIsLogged] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (localStorage.getItem("currentUser")) {
+      setIsLogged(true);
+    }
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem("currentUser");
+    setIsLogged(false);
+    navigate("/");
+  };
 
   const handleNavigation = (href) => {
     // If Home clicked
@@ -70,8 +83,8 @@ function Navbar() {
               </nav>
             </div>
 
-            {/* Right Side */}
-            <div className="flex justify-end">
+          {/* Right Side */}
+            <div className="flex justify-end gap-3">
               <button
                 onClick={() => setIsOpen(!isOpen)}
                 className="md:hidden text-white text-2xl"
@@ -79,12 +92,29 @@ function Navbar() {
                 ☰
               </button>
 
-              <button
-                onClick={() => navigate("/signup")}
-                className="hidden md:flex text-white bg-[#1FBCF9] rounded-full px-5 py-2 hover:bg-[#1aa7de] transition"
-              >
-                Sign Up
-              </button>
+              {isLogged ? (
+                <>
+                  <button
+                    onClick={() => navigate("/dashboard")}
+                    className="hidden md:flex text-white bg-transparent border border-[#1FBCF9] rounded-full px-5 py-2 hover:bg-[#1FBCF9]/10 transition"
+                  >
+                    Dashboard
+                  </button>
+                  <button
+                    onClick={handleLogout}
+                    className="hidden md:flex text-white bg-red-500 rounded-full px-5 py-2 hover:bg-red-600 transition"
+                  >
+                    Logout
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => navigate("/signup")}
+                  className="hidden md:flex text-white bg-[#1FBCF9] rounded-full px-5 py-2 hover:bg-[#1aa7de] transition"
+                >
+                  Sign Up
+                </button>
+              )}
             </div>
           </div>
 
@@ -103,15 +133,38 @@ function Navbar() {
                   {link.label}
                 </button>
               ))}
-              <button
-                onClick={() => {
-                  navigate("/signup");
-                  setIsOpen(false);
-                }}
-                className="text-white bg-[#1FBCF9] rounded-full px-5 py-2"
-              >
-                Sign Up
-              </button>
+              {isLogged ? (
+                <>
+                  <button
+                    onClick={() => {
+                      navigate("/dashboard");
+                      setIsOpen(false);
+                    }}
+                    className="text-white bg-transparent border border-[#1FBCF9] rounded-full px-5 py-2 w-full max-w-[200px]"
+                  >
+                    Dashboard
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleLogout();
+                      setIsOpen(false);
+                    }}
+                    className="text-white bg-red-500 rounded-full px-5 py-2 w-full max-w-[200px]"
+                  >
+                    Logout
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => {
+                    navigate("/signup");
+                    setIsOpen(false);
+                  }}
+                  className="text-white bg-[#1FBCF9] rounded-full px-5 py-2 w-full max-w-[200px]"
+                >
+                  Sign Up
+                </button>
+              )}
             </div>
           )}
         </div>

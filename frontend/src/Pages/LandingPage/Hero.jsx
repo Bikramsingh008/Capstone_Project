@@ -1,7 +1,15 @@
 import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
 
 export default function Hero() {
   const navigate = useNavigate();
+  const [isLogged, setIsLogged] = useState(false);
+
+  useEffect(() => {
+    if (localStorage.getItem("currentUser")) {
+      setIsLogged(true);
+    }
+  }, []);
 
   return (
     <>
@@ -27,12 +35,21 @@ export default function Hero() {
 
           {/* Normal Button */}
           <div className="flex items-center mt-6">
-            <button
-              onClick={() => navigate("/dashboard")}
-              className="px-6 py-3 bg-[#1FBCF9] hover:bg-blue-600 text-white rounded-lg font-medium transition duration-300"
-            >
-              Sign up →
-            </button>
+            {isLogged ? (
+              <button
+                onClick={() => navigate("/dashboard")}
+                className="px-6 py-3 bg-[#1FBCF9] hover:bg-blue-600 text-white rounded-lg font-medium transition duration-300"
+              >
+                Go to Dashboard →
+              </button>
+            ) : (
+              <button
+                onClick={() => navigate("/signup")}
+                className="px-6 py-3 bg-[#1FBCF9] hover:bg-blue-600 text-white rounded-lg font-medium transition duration-300"
+              >
+                Sign up →
+              </button>
+            )}
           </div>
         </div>
       </section>

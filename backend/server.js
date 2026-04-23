@@ -1,12 +1,28 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const db = require('./database');
+const connectDB = require('./config/db');
 const mailer = require('./mailer');
 const sms = require('./sms');
 const cronWorkers = require('./cron');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+// Models
+const User = require('./models/User');
+const Doctor = require('./models/Doctor');
+const Appointment = require('./models/Appointment');
+const Report = require('./models/Report');
+const Medication = require('./models/Medication');
+const WellnessRecord = require('./models/WellnessRecord');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Connect to Database
+connectDB();
+
+// Initialize AI
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Initialize continuous background processing logic
 cronWorkers.startCronJobs();
@@ -14,211 +30,232 @@ cronWorkers.startCronJobs();
 app.use(cors());
 app.use(express.json());
 
-// User Authentication API
-app.post('/api/users/signup', (req, res) => {
-    const { username, email, phone, password, gender, age, weight, height, bmi, bloodGroup } = req.body;
-    db.run(
-        `INSERT INTO users (username, email, phone, password, gender, age, weight, height, bmi, bloodGroup) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [username, email, phone, password, gender, age, weight, height, bmi, bloodGroup],
-        function(err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ message: 'Signup successful', userId: this.lastID });
-        }
-    );
-});
-
-app.post('/api/users/login', (req, res) => {
-    const { username, password } = req.body;
-    db.get('SELECT * FROM users WHERE username = ? AND password = ?', [username, password], (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
-        if (!row) return res.status(401).json({ error: 'Invalid credentials' });
-        res.json({ message: 'Login successful', user: row });
-    });
-});
-
-app.put('/api/users/:id', (req, res) => {
-    const { email, phone, gender, age, weight, height, bmi, systolic, diastolic, bloodGroup, happinessLevel, feeling, stressLevel, sleepQuality } = req.body;
-    const { id } = req.params;
-
-    db.run(
-        `UPDATE users SET 
-            email = COALESCE(?, email),
-            phone = COALESCE(?, phone),
-            gender = COALESCE(?, gender),
-            age = COALESCE(?, age),
-            weight = COALESCE(?, weight),
-            height = COALESCE(?, height),
-            bmi = COALESCE(?, bmi),
-            bloodGroup = COALESCE(?, bloodGroup)
-         WHERE id = ?`,
-        [email, phone, gender, age, weight, height, bmi, bloodGroup, id],
-        function(err) {
-            if (err) return res.status(500).json({ error: err.message });
-            
-            db.get('SELECT * FROM users WHERE id = ?', [id], (err, row) => {
-                if (err) return res.status(500).json({ error: err.message });
-                res.json({ message: 'Profile updated successfully', user: row });
-            });
-        }
-    );
-});
-
-// API endpoints for Doctors
-app.get('/api/doctors', (req, res) => {
-    const { location } = req.query;
-    let query = 'SELECT * FROM doctors';
-    let params = [];
-    
-    if (location) {
-        query += ' WHERE location LIKE ?';
-        params = [`%${location}%`];
+// Users API
+app.post('/api/users/signup', async (req, res) => {
+    try {
+        const newUser = new User(req.body);
+        await newUser.save();
+        res.json({ message: 'Signup successful', userId: newUser._id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
-
-    db.all(query, params, (err, rows) => {
-        if (err) {
-            res.status(500).json({ error: err.message });
-            return;
-        }
-        res.json(rows);
-    });
 });
 
-// API endpoints for Appointments
-app.post('/api/appointments', (req, res) => {
-    const { userId, email, phone, doctorId, doctorName, date, time } = req.body;
-    
-    db.run('INSERT INTO appointments (user_id, doctor_id, date, time) VALUES (?, ?, ?, ?)', 
-        [userId || 1, doctorId, date, time],
-        function(err) {
-            if (err) return res.status(500).json({ error: err.message });
+app.post('/api/users/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        const user = await User.findOne({ username, password });
+        if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+        res.json({ message: 'Login successful', user });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/users/:id', async (req, res) => {
+    try {
+        const user = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        res.json({ message: 'Profile updated successfully', user });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Doctors API & Geolocation logic (FR-14)
+app.get('/api/doctors', async (req, res) => {
+    try {
+        const { location, specialization } = req.query;
+        let filter = {};
+        if (location) filter.location = { $regex: new RegExp(location, 'i') };
+        if (specialization) filter.specialization = { $regex: new RegExp(specialization, 'i') };
+
+        let doctors = await Doctor.find(filter);
+
+        if (doctors.length === 0 && location) {
+            // Seed mock doctors if none exist for demo
+            const displayLoc = location.trim().charAt(0).toUpperCase() + location.trim().slice(1);
+            const genericSpec = specialization || 'General Physician';
             
-            // Send Notification using dynamic email
-            if (email) {
-                mailer.sendNotification(
-                    email,
-                    "Appointment Confirmed: Arogya AI Healthcare",
-                    `Your doctor appointment with ${doctorName || 'a specialist'} has been scheduled for ${date} at ${time}.`
-                );
-            }
-            if (phone) {
-                sms.sendSMS(phone, `Arogya Notification: Your doctor appointment with ${doctorName} is confirmed for ${date} at ${time}.`);
-            }
+            const mockDoctors = [
+                { name: 'Dr. R. K. Sharma', specialization: genericSpec, location: displayLoc, phone: '+91-9876543210', address: `Central Clinic, ${displayLoc}`, rating: 4.8, image_url: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=300&q=80' },
+                { name: 'Dr. Anita Desai', specialization: 'Cardiologist', location: displayLoc, phone: '+91-9876543211', address: `City Heart Center, ${displayLoc}`, rating: 4.9, image_url: 'https://images.unsplash.com/photo-1594824436998-d50d6ff71c6d?w=300&q=80' },
+                { name: 'Dr. Vikram Singh', specialization: 'Neurologist', location: displayLoc, phone: '+91-9876543212', address: `Brain & Spine Institute, ${displayLoc}`, rating: 4.7, image_url: 'https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=300&q=80' },
+                { name: 'Dr. Meera Patel', specialization: 'Dermatologist', location: displayLoc, phone: '+91-9876543213', address: `Skin Glow Care, ${displayLoc}`, rating: 4.6, image_url: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=300&q=80' },
+                { name: 'Dr. Rahul Verma', specialization: 'Pediatrician', location: displayLoc, phone: '+91-9876543214', address: `Kids Health Clinic, ${displayLoc}`, rating: 4.9, image_url: 'https://images.unsplash.com/photo-1612349317150-e410f624c427?w=300&q=80' }
+            ];
 
-            res.json({ message: 'Appointment booked successfully', appointmentId: this.lastID });
+            doctors = await Doctor.insertMany(mockDoctors);
+            
+            if (specialization) {
+                 doctors = doctors.filter(d => d.specialization.toLowerCase().includes(specialization.toLowerCase() || ''));
+            }
         }
-    );
+        res.json(doctors);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-// Mocked AI Chat Endpoint
-app.post('/api/chat', (req, res) => {
-    const { message } = req.body;
-    
-    // Simulate AI delay and response
-    setTimeout(() => {
-        const lowerMessage = message.toLowerCase();
-        let reply = "I am your AI Healthcare assistant. I can help interpret symptoms, remind you about medications, and answer general health queries. However, I am not a replacement for a professional doctor.";
-        
-        if (lowerMessage.includes('headache')) {
-            reply = "For a headache, ensure you are drinking plenty of water and getting enough rest. If it persists, you might consider taking over-the-counter pain relievers or booking an appointment with a doctor.";
-        } else if (lowerMessage.includes('fever')) {
-            reply = "A fever could indicate an infection. Please monitor your temperature. Drink fluids, and if it exceeds 103°F (39.4°C) or lasts over 3 days, consult a physician immediately.";
-        } else if (lowerMessage.includes('report') || lowerMessage.includes('pdf')) {
-            reply = "You can generate a comprehensive health report and download it as a PDF from the 'My Health Reports' tab on your dashboard.";
+// Appointments API (FR-15)
+app.post('/api/appointments', async (req, res) => {
+    try {
+        const { userId, email, phone, doctorId, doctorName, date, time } = req.body;
+        const newAppointment = new Appointment({
+            user_id: userId, doctor_id: doctorId, date, time
+        });
+        await newAppointment.save();
+
+        if (email) {
+            mailer.sendNotification(email, "Appointment Confirmed: Arogya AI Healthcare", `Your doctor appointment with ${doctorName || 'a specialist'} has been scheduled for ${date} at ${time}.`);
         }
-        
+        if (phone) {
+            sms.sendSMS(phone, `Arogya Notification: Your doctor appointment with ${doctorName} is confirmed for ${date} at ${time}.`);
+        }
+
+        res.json({ message: 'Appointment booked successfully', appointmentId: newAppointment._id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/appointments/:userId', async (req, res) => {
+    try {
+         const appointments = await Appointment.find({ user_id: req.params.userId }).populate('doctor_id');
+         res.json(appointments);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// AI Chatbot (Gemini Integration) (FR-6, FR-13, FR-16)
+app.post('/api/chat', async (req, res) => {
+    try {
+        const { message, userId } = req.body;
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+        let context = "You are Arogya, an empathetic AI Healthcare Assistant.";
+        if (userId) {
+             const user = await User.findById(userId);
+             if (user) {
+                 context += ` You are speaking to ${user.username}, age ${user.age}.`;
+             }
+        }
+        context += ` 
+        If they mention severe symptoms, recommend emergency support (FR-16).
+        If they mention regular symptoms, suggest an appropriate doctor specialization so they can search for it (FR-13).
+        Keep your advice helpful, concise and clear that you are AI not a real doctor.
+        `;
+
+        const prompt = `${context}\n\nUser: ${message}\nAssistant:`;
+        const result = await model.generateContent(prompt);
+        const reply = result.response.text();
         res.json({ reply });
-    }, 1000);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'AI Error: ' + err.message });
+    }
 });
 
-// Mocked AI Health Report Generator Endpoint
-app.post('/api/reports', (req, res) => {
-    const { userId, symptoms } = req.body;
-    
-    setTimeout(() => {
-        // Generate a mock report
-        const aiAnalysis = `Based on your symptoms (${symptoms}), our AI model suggests monitoring your condition carefully.
-Possible factors: Stress, lack of sleep, or minor viral infection.
-Recommendations:
-- Rest for at least 8 hours a day.
-- Maintain a balanced diet.
-- Book a general physician checkup if symptoms persist.
-*** This is an AI-generated report and not medical advice ***`;
-        
-        db.run('INSERT INTO reports (user_id, symptoms, ai_analysis) VALUES (?, ?, ?)',
-            [userId || 1, symptoms, aiAnalysis],
-            function(err) {
-                if (err) return res.status(500).json({ error: err.message });
-                res.json({ 
-                    message: 'Report generated successfully', 
-                    report: {
-                        id: this.lastID,
-                        user_id: userId || 1,
-                        symptoms,
-                        ai_analysis: aiAnalysis,
-                        created_at: new Date().toISOString()
-                    }
-                });
-            }
-        );
-    }, 2000); // 2 second delay to simulate analysis
+// AI Report Generation (FR-8)
+app.post('/api/reports', async (req, res) => {
+    try {
+        const { userId, symptoms } = req.body;
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+        const prompt = `Act as an AI Medical Analyst. Generate a detailed, professional health report based on these symptoms: "${symptoms}". Include potential causes, recommendations, and whether seeing a doctor is advised. End with a disclaimer that this is AI generated.`;
+        const result = await model.generateContent(prompt);
+        const aiAnalysis = result.response.text();
+
+        const newReport = new Report({
+            user_id: userId, symptoms, ai_analysis: aiAnalysis
+        });
+        await newReport.save();
+
+        res.json({ message: 'Report generated successfully', report: newReport });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-// Fetch historical reports
-app.get('/api/reports/:userId', (req, res) => {
-    db.all('SELECT * FROM reports WHERE user_id = ? ORDER BY created_at DESC', [req.params.userId || 1], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
-    });
+app.get('/api/reports/:userId', async (req, res) => {
+    try {
+        const reports = await Report.find({ user_id: req.params.userId }).sort({ created_at: -1 });
+        res.json(reports);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-// Medications APIs
-app.get('/api/medications/:userId', (req, res) => {
-    db.all('SELECT * FROM medications WHERE user_id = ?', [req.params.userId || 1], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
-    });
+// Medications
+app.get('/api/medications/:userId', async (req, res) => {
+    try {
+        const medications = await Medication.find({ user_id: req.params.userId });
+        res.json(medications);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.post('/api/medications', (req, res) => {
-    const { userId, email, phone, name, dosage, frequency, time } = req.body;
-    db.run('INSERT INTO medications (user_id, name, dosage, frequency, time) VALUES (?, ?, ?, ?, ?)',
-        [userId || 1, name, dosage, frequency, time],
-        function(err) {
-            if (err) return res.status(500).json({ error: err.message });
-            
-            // Send Notification dynamically
-            if (email) {
-                mailer.sendNotification(
-                    email, 
-                    "Medication Schedule Configured: Arogya AI Healthcare",
-                    `You have successfully configured a new medication reminder. \n\nMedicine: ${name} (${dosage})\nFrequency: ${frequency}\nTime: ${time}\n\nPlease take your medication on time.`
-                );
-            }
-            if (phone) {
-                sms.sendSMS(phone, `Arogya Notification: Medication Schedule for ${name} at ${time} is recorded successfully.`);
-            }
+app.post('/api/medications', async (req, res) => {
+    try {
+        const { userId, email, phone, name, dosage, frequency, time } = req.body;
+        const newMedication = new Medication({ user_id: userId, name, dosage, frequency, time });
+        await newMedication.save();
 
-            res.json({ message: 'Medication added successfully', medicationId: this.lastID });
+        if (email) {
+            mailer.sendNotification(email, "Medication Schedule Configured: Arogya AI Healthcare", `Medicine: ${name} (${dosage})\nFrequency: ${frequency}\nTime: ${time}`);
         }
-    );
+        if (phone) {
+            sms.sendSMS(phone, `Arogya Notification: Medication ${name} at ${time} scheduled successfully.`);
+        }
+        res.json({ message: 'Medication added', medicationId: newMedication._id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.delete('/api/medications/:id', (req, res) => {
-    db.run('DELETE FROM medications WHERE id = ?', [req.params.id], function(err) {
-        if (err) return res.status(500).json({ error: err.message });
+app.delete('/api/medications/:id', async (req, res) => {
+    try {
+        await Medication.findByIdAndDelete(req.params.id);
         res.json({ message: 'Medication removed' });
-    });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-// Wellness Tips Mocked API
+// Mental Wellness Engine API (FR-12)
+app.post('/api/wellness-checkin', async (req, res) => {
+    try {
+        const { userId, mood, stressLevel, energyLevel, sleepQuality, journalEntry } = req.body;
+        const riskScore = (stressLevel * 2) - energyLevel + (mood === 'Sad' || mood === 'Anxious' ? 10 : 0);
+        
+        const record = new WellnessRecord({
+            user_id: userId, mood, stressLevel, energyLevel, sleepQuality, journalEntry, riskScore
+        });
+        await record.save();
+
+        res.json({ message: 'Mental wellness check-in saved', record });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/wellness-checkin/:userId', async (req, res) => {
+    try {
+        const records = await WellnessRecord.find({ user_id: req.params.userId }).sort({ createdAt: -1 });
+        res.json(records);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/api/wellness', (req, res) => {
     const tips = [
-        { id: 1, category: 'Nutrition', title: 'Eat the Rainbow', description: 'Include a variety of colorful fruits and vegetables in your diet for essential vitamins.', icon: '🥗' },
-        { id: 2, category: 'Sleep', title: 'Maintain a Schedule', description: 'Go to bed and wake up at the same time every day to regulate your circadian rhythm.', icon: '😴' },
-        { id: 3, category: 'Exercise', title: 'Stay Active', description: 'Aim for at least 30 minutes of moderate physical activity every day.', icon: '🏃' },
-        { id: 4, category: 'Hydration', title: 'Drink Water', description: 'Drink at least 8 glasses of water a day to stay hydrated and energetic.', icon: '💧' },
-        { id: 5, category: 'Mental Health', title: 'Practice Mindfulness', description: 'Take 5 minutes a day for deep breathing or meditation to reduce stress.', icon: '🧘' }
+        { id: 1, category: 'Nutrition', title: 'Eat the Rainbow', description: 'Include a variety of colorful fruits and vegetables in your diet.', icon: '🥗' },
+        { id: 2, category: 'Sleep', title: 'Maintain a Schedule', description: 'Go to bed and wake up at the same time to regulate your circadian rhythm.', icon: '😴' },
+        { id: 3, category: 'Exercise', title: 'Stay Active', description: 'Aim for at least 30 minutes of activity every day.', icon: '🏃' },
+        { id: 4, category: 'Hydration', title: 'Drink Water', description: 'Drink at least 8 glasses of water a day.', icon: '💧' },
+        { id: 5, category: 'Mental Health', title: 'Practice Mindfulness', description: 'Take 5 minutes for deep breathing to reduce stress.', icon: '🧘' }
     ];
     res.json(tips);
 });
