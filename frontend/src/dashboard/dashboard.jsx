@@ -17,7 +17,7 @@ function Dashboard() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const stored = localStorage.getItem("currentUser");
+    const stored = sessionStorage.getItem("currentUser");
     if (stored) {
       const parsed = JSON.parse(stored);
       setData(parsed);
@@ -43,7 +43,7 @@ function Dashboard() {
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem("currentUser");
+    sessionStorage.removeItem("currentUser");
     navigate("/signup");
   };
 
@@ -53,7 +53,7 @@ function Dashboard() {
         const res = await axios.put(`http://localhost:3000/api/users/${data.id}`, editForm);
         setData(res.data.user);
         setEditForm(res.data.user);
-        localStorage.setItem("currentUser", JSON.stringify(res.data.user));
+        sessionStorage.setItem("currentUser", JSON.stringify(res.data.user));
         alert("Profile Successfully Updated!");
       } else {
         setData(editForm);

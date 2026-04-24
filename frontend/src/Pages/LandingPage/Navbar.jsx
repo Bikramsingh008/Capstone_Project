@@ -15,13 +15,13 @@ function Navbar() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (localStorage.getItem("currentUser")) {
+    if (sessionStorage.getItem("currentUser")) {
       setIsLogged(true);
     }
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem("currentUser");
+    sessionStorage.removeItem("currentUser");
     setIsLogged(false);
     navigate("/");
   };

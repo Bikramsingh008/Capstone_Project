@@ -8,7 +8,8 @@ function MedicationManager({ data }) {
 
   const fetchMedications = async () => {
     try {
-      const res = await axios.get(`http://localhost:3000/api/medications/${data?.id || 1}`);
+      const validId = data?._id || data?.id || "640a1b2c3d4e5f6a7b8c9d0e";
+      const res = await axios.get(`http://localhost:3000/api/medications/${validId}`);
       setMedications(res.data);
     } catch (err) {
       console.error(err);
@@ -24,15 +25,16 @@ function MedicationManager({ data }) {
     if (!form.name || !form.dosage || !form.time) return;
     setLoading(true);
     try {
+      const validId = data?._id || data?.id || "640a1b2c3d4e5f6a7b8c9d0e";
       await axios.post("http://localhost:3000/api/medications", { 
         ...form, 
-        userId: data?.id || 1, 
+        userId: validId, 
         email: data?.email,
         phone: data?.phone 
       });
       setForm({ name: "", dosage: "", frequency: "Daily", time: "" });
       fetchMedications();
-      alert(`Medication schedule for ${form.name} saved!\nA reminder confirmation has been sent to your email.`);
+      alert(`Medication schedule for ${form.name} saved!\nA reminder confirmation has been sent.`);
     } catch (err) {
       alert("Error adding medication");
     }
@@ -113,7 +115,7 @@ function MedicationManager({ data }) {
           </div>
         ) : (
           medications.map(med => (
-            <div key={med.id} className="bg-gradient-to-r from-white/5 to-transparent p-6 rounded-2xl border border-white/10 flex justify-between items-center group">
+            <div key={med._id} className="bg-gradient-to-r from-white/5 to-transparent p-6 rounded-2xl border border-white/10 flex justify-between items-center group">
               <div className="flex items-center space-x-4">
                 <div className="w-12 h-12 rounded-full bg-[#1FBCF9]/20 flex justify-center items-center text-2xl">
                   💊
@@ -124,7 +126,7 @@ function MedicationManager({ data }) {
                 </div>
               </div>
               <button 
-                onClick={() => deleteMedication(med.id)}
+                onClick={() => deleteMedication(med._id)}
                 className="opacity-0 group-hover:opacity-100 bg-red-500/20 text-red-500 px-4 py-2 rounded-lg hover:bg-red-500 hover:text-white transition"
               >
                 Delete

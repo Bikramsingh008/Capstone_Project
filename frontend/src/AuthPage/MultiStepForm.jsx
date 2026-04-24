@@ -58,7 +58,7 @@ function MultiStepForm() {
       const res = await axios.post("http://localhost:3000/api/users/signup", formData);
       
       const userData = { ...formData, id: res.data.userId };
-      localStorage.setItem("currentUser", JSON.stringify(userData));
+      sessionStorage.setItem("currentUser", JSON.stringify(userData));
       next();
     } catch (err) {
       alert("Error during signup. Username or Email may already exist.");
