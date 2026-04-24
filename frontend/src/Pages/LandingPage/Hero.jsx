@@ -6,7 +6,7 @@ export default function Hero() {
   const [isLogged, setIsLogged] = useState(false);
 
   useEffect(() => {
-    if (localStorage.getItem("currentUser")) {
+    if (sessionStorage.getItem("currentUser")) {
       setIsLogged(true);
     }
   }, []);

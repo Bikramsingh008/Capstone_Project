@@ -26,7 +26,7 @@ function AuthPage() {
   const handleLogin = async () => {
     try {
       const res = await axios.post("http://localhost:3000/api/users/login", loginData);
-      localStorage.setItem("currentUser", JSON.stringify(res.data.user));
+      sessionStorage.setItem("currentUser", JSON.stringify(res.data.user));
       navigate("/dashboard");
     } catch (err) {
       alert("Invalid username or password.");

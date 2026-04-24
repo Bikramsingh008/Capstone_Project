@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import jsPDF from "jspdf";
+import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 
 function HealthReports({ data }) {
@@ -12,10 +12,13 @@ function HealthReports({ data }) {
 
   const fetchReports = async () => {
     try {
-      const res = await axios.get(`http://localhost:3000/api/reports/${data?.id || 1}`); 
+      const validId = data?._id || data?.id || "640a1b2c3d4e5f6a7b8c9d0e";
+      const res = await axios.get(`http://localhost:3000/api/reports/${validId}`); 
       setReports(res.data);
+      return res.data;
     } catch (err) {
       console.error(err);
+      return [];
     }
   };
 
@@ -27,37 +30,193 @@ function HealthReports({ data }) {
     if (!symptoms.trim()) return;
     setLoading(true);
     try {
+      const validId = data?._id || data?.id || "640a1b2c3d4e5f6a7b8c9d0e";
       await axios.post("http://localhost:3000/api/reports", {
-        userId: data?.id || 1,
+        userId: validId,
         symptoms
       });
       setSymptoms("");
-      fetchReports();
+      const updatedReports = await fetchReports();
+      if (updatedReports.length > 0) {
+        downloadPDF(updatedReports[0]);
+      }
     } catch (err) {
-      alert("Failed to generate report.");
+      console.error("Report generation error:", err);
+      alert("Failed to generate report: " + (err.response?.data?.error || err.message));
     }
     setLoading(false);
   };
 
-  const downloadPDF = async () => {
-    if (!reportRef.current) return;
-    
-    // add temporary class to force white background for PDF rendering because text is white
-    reportRef.current.classList.add("bg-gray-900", "p-8", "text-white");
-    
-    const canvas = await html2canvas(reportRef.current, { scale: 2 });
-    
-    reportRef.current.classList.remove("bg-gray-900", "p-8", "text-white");
+  const downloadPDF = (reportToDownload = null) => {
+    try {
+      const report = reportToDownload || reports[0];
+      
+      if (!report) {
+        alert("No report available to download.");
+        return;
+      }
 
-    const imgData = canvas.toDataURL("image/png");
-    const pdf = new jsPDF("p", "mm", "a4");
-    
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-    
-    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-    pdf.save("AI-Health-Report.pdf");
-    alert("PDF Downloaded Successfully!");
+      const pdf = new jsPDF("p", "mm", "a4");
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      
+      // Colors
+      const primaryColor = [31, 188, 249];
+      const darkBg = [17, 24, 39];
+      const textDark = [50, 50, 50];
+      const textLight = [100, 100, 100];
+      const borderGray = [220, 220, 220];
+
+      let cursorY = 0;
+
+      // 1. Header Background
+      pdf.setFillColor(...darkBg);
+      pdf.rect(0, 0, pageWidth, 40, "F");
+
+      // 2. Header Text
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(24);
+      pdf.text("AROGYA HEALTHCARE", 20, 22);
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(12);
+      pdf.setTextColor(...primaryColor);
+      pdf.text("AI CLINICAL ASSESSMENT REPORT", 20, 32);
+
+      cursorY = 50;
+
+      // 3. Info Box
+      pdf.setFillColor(245, 247, 250);
+      pdf.rect(20, cursorY, pageWidth - 40, 25, "F");
+      pdf.setDrawColor(...borderGray);
+      pdf.setLineWidth(0.5);
+      pdf.rect(20, cursorY, pageWidth - 40, 25, "S");
+
+      pdf.setFontSize(10);
+      pdf.setTextColor(...textLight);
+      
+      pdf.text("Report ID:", 25, cursorY + 8);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...textDark);
+      const mockReportId = `RPT-${new Date(report.created_at).getTime().toString().slice(-6)}`;
+      pdf.text(mockReportId, 45, cursorY + 8);
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textLight);
+      pdf.text("Date:", 140, cursorY + 8);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...textDark);
+      pdf.text(new Date(report.created_at).toLocaleDateString(), 152, cursorY + 8);
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textLight);
+      pdf.text("Patient ID:", 25, cursorY + 18);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...textDark);
+      pdf.text(`USR-${report.user_id || data?.id || "GUEST"}`, 45, cursorY + 18);
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textLight);
+      pdf.text("Time:", 140, cursorY + 18);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...textDark);
+      pdf.text(new Date(report.created_at).toLocaleTimeString(), 152, cursorY + 18);
+
+      cursorY += 40;
+
+      // 4. Chief Complaint Section
+      pdf.setFontSize(14);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...darkBg);
+      pdf.text("1. Chief Complaint (Symptoms Logged)", 20, cursorY);
+      
+      // Underline
+      pdf.setDrawColor(...primaryColor);
+      pdf.setLineWidth(0.5);
+      pdf.line(20, cursorY + 2, 110, cursorY + 2);
+
+      cursorY += 10;
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(11);
+      pdf.setTextColor(...textDark);
+      const symptomsLines = pdf.splitTextToSize(report.symptoms, pageWidth - 40);
+      pdf.text(symptomsLines, 20, cursorY);
+      cursorY += (symptomsLines.length * 6) + 15;
+
+      // 5. AI Assessment Section
+      pdf.setFontSize(14);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...darkBg);
+      pdf.text("2. AI Clinical Assessment & Recommendations", 20, cursorY);
+      
+      pdf.setDrawColor(...primaryColor);
+      pdf.setLineWidth(0.5);
+      pdf.line(20, cursorY + 2, 130, cursorY + 2);
+
+      cursorY += 10;
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(11);
+      pdf.setTextColor(...textDark);
+      
+      // Clean up markdown asterisks for a cleaner PDF
+      const analysisText = report.ai_analysis || "";
+      const cleanedAnalysis = analysisText.replace(/\*\*/g, '');
+      
+      const analysisLines = pdf.splitTextToSize(cleanedAnalysis, pageWidth - 40);
+      
+      for (let i = 0; i < analysisLines.length; i++) {
+        if (cursorY > pageHeight - 35) {
+          // Add footer to current page before switching
+          pdf.setFontSize(8);
+          pdf.setTextColor(150, 150, 150);
+          pdf.text(`Page ${pdf.internal.getNumberOfPages()}`, pageWidth / 2, pageHeight - 10, { align: "center" });
+          
+          pdf.addPage();
+          cursorY = 20;
+          pdf.setFont("helvetica", "normal");
+          pdf.setFontSize(11);
+          pdf.setTextColor(...textDark);
+        }
+        pdf.text(analysisLines[i], 20, cursorY);
+        cursorY += 6;
+      }
+
+      // 6. Footer Disclaimer
+      if (cursorY > pageHeight - 35) {
+        pdf.setFontSize(8);
+        pdf.setTextColor(150, 150, 150);
+        pdf.text(`Page ${pdf.internal.getNumberOfPages()}`, pageWidth / 2, pageHeight - 10, { align: "center" });
+        pdf.addPage();
+        cursorY = 20;
+      }
+      
+      cursorY += 10;
+      pdf.setDrawColor(...borderGray);
+      pdf.setLineWidth(0.5);
+      pdf.line(20, cursorY, pageWidth - 20, cursorY);
+      cursorY += 6;
+      
+      pdf.setFontSize(8);
+      pdf.setTextColor(150, 150, 150);
+      pdf.setFont("helvetica", "italic");
+      const disclaimer = "DISCLAIMER: This report is generated by the Arogya AI Assistant for informational purposes only. It is not intended to be a substitute for professional medical advice, diagnosis, or treatment. Always seek the advice of your physician or other qualified health provider with any questions you may have regarding a medical condition.";
+      const disclaimerLines = pdf.splitTextToSize(disclaimer, pageWidth - 40);
+      pdf.text(disclaimerLines, 20, cursorY);
+      
+      // Page number for final page
+      pdf.setFont("helvetica", "normal");
+      pdf.text(`Page ${pdf.internal.getNumberOfPages()}`, pageWidth / 2, pageHeight - 10, { align: "center" });
+
+      // Build specific filename
+      const safeDate = new Date(report.created_at).toISOString().split('T')[0];
+      pdf.save(`Arogya-Health-Report_${safeDate}.pdf`);
+    } catch (err) {
+      console.error("Error generating PDF: ", err);
+      alert("Error generating PDF: " + err.message);
+    }
   };
 
   // Mock past stats based on data object
@@ -134,7 +293,7 @@ function HealthReports({ data }) {
             {reports.map((report) => (
               <div key={report.id} className="bg-black/40 p-6 rounded-xl border border-white/5 relative">
                 <div className="absolute top-4 right-4 text-xs text-gray-500">
-                  {new Date(report.created_at).toLocaleDateString()}
+                  {new Date(report.created_at).toLocaleString()}
                 </div>
                 <h3 className="font-semibold text-[#1FBCF9] mb-2 uppercase tracking-wider text-sm">Symptoms Logged</h3>
                 <p className="text-gray-300 mb-4 bg-white/5 p-3 rounded-lg border border-white/10">{report.symptoms}</p>

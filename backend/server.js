@@ -35,6 +35,12 @@ app.post('/api/users/signup', async (req, res) => {
     try {
         const newUser = new User(req.body);
         await newUser.save();
+        
+        // SMS Notification for account creation
+        if (newUser.phone) {
+            sms.sendSMS(newUser.phone, `Welcome to Arogya Healthcare, ${newUser.username}! Your account has been created successfully.`);
+        }
+
         res.json({ message: 'Signup successful', userId: newUser._id });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -46,6 +52,15 @@ app.post('/api/users/login', async (req, res) => {
         const { username, password } = req.body;
         const user = await User.findOne({ username, password });
         if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+        
+        // Notification for successful login
+        if (user.phone) {
+            sms.sendSMS(user.phone, `Arogya Notification: Successful login to your account. If this wasn't you, please secure your account.`);
+        }
+        if (user.email) {
+            mailer.sendNotification(user.email, "Login Alert: Arogya AI Healthcare", `Successful login to your account. If this wasn't you, please secure your account.`);
+        }
+
         res.json({ message: 'Login successful', user });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -216,7 +231,18 @@ app.post('/api/medications', async (req, res) => {
 
 app.delete('/api/medications/:id', async (req, res) => {
     try {
-        await Medication.findByIdAndDelete(req.params.id);
+        const med = await Medication.findById(req.params.id).populate('user_id');
+        if (med) {
+            await Medication.findByIdAndDelete(req.params.id);
+            if (med.user_id && med.user_id.email) {
+                mailer.sendNotification(med.user_id.email, "Medication Removed: Arogya AI Healthcare", `Your medication schedule for ${med.name} (${med.dosage}) has been successfully deleted.`);
+            }
+            if (med.user_id && med.user_id.phone) {
+                sms.sendSMS(med.user_id.phone, `Arogya Notification: Medication ${med.name} has been removed from your schedule.`);
+            }
+        } else {
+            return res.status(404).json({ error: 'Medication not found' });
+        }
         res.json({ message: 'Medication removed' });
     } catch (err) {
         res.status(500).json({ error: err.message });

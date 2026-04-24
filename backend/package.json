@@ -14,7 +14,8 @@
     "mongoose": "^9.5.0",
     "node-cron": "^4.2.1",
     "nodemailer": "^8.0.5",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "twilio": "^6.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"
