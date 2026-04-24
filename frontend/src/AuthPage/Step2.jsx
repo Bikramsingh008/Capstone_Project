@@ -16,10 +16,16 @@ import { Activity } from "lucide-react";
           </p>
         </div>
 
-const frequencyOptions = ["Daily", "Weekly", "Monthly", "Rarely"];
-const adherenceOptions = ["Always", "Often", "Sometimes", "Rarely", "Never"];
+const symptoms = [
+  "Headache", "Nausea", "Vomiting", "Diarrhea",
+  "Fatigue", "Insomnia", "Constipation",
+  "Muscle Pain", "Joint Pain", "Other"
+];
 
-export default function Step3({ formData, updateForm, next, back }) {
+const frequencyOptions = ["Daily", "Weekly", "Monthly", "Rarely"];
+const intensityLevels = Array.from({ length: 10 }, (_, i) => i + 1);
+
+export default function Step2({ formData, updateForm, next, back }) {
   return (
     <div className="p-10 flex justify-center">
       <div className="container max-w-4xl space-y-8">
@@ -28,41 +34,40 @@ export default function Step3({ formData, updateForm, next, back }) {
           <h2 className="text-2xl font-bold">Complete your profile</h2>
         </div>
 
-        <Progress current={3} />
+        <Progress current={2} />
 
-        {/* Medicines */}
-        <div className="grid md:grid-cols-2 gap-4">
-          <input
-            type="text"
-            placeholder="Medicine Name"
-            className="p-2 rounded bg-black border border-gray-600"
-            onChange={(e) => updateForm({ medicines: e.target.value })}
-          />
-          <input
-            type="text"
-            placeholder="Dosage"
-            className="p-2 rounded bg-black border border-gray-600"
-            onChange={(e) => updateForm({ dosage: e.target.value })}
-          />
+        {/* Symptom */}
+        <div>
+          <p className="mb-2 font-medium">What symptom are you experiencing?</p>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            {symptoms.map((sym) => (
+              <button
+                key={sym}
+                type="button"
+                onClick={() => updateForm({ symptom: sym })}
+                className={`p-2 rounded border ${
+                  formData.symptom === sym
+                    ? "bg-[#1FBCF9]"
+                    : "border-gray-500"
+                }`}
+              >
+                {sym}
+              </button>
+            ))}
+          </div>
         </div>
-
-        <textarea
-          placeholder="Purpose of medication"
-          className="p-2 rounded bg-black border border-gray-600 w-full"
-          onChange={(e) => updateForm({ purpose: e.target.value })}
-        />
 
         {/* Frequency */}
         <div>
-          <p className="mb-2 font-medium">How often do you take it?</p>
+          <p className="mb-2 font-medium">How often?</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {frequencyOptions.map((freq) => (
               <button
                 key={freq}
                 type="button"
-                onClick={() => updateForm({ intakeFrequency: freq })}
+                onClick={() => updateForm({ symptomDuration: freq })}
                 className={`p-2 rounded border ${
-                  formData.intakeFrequency === freq
+                  formData.symptomDuration === freq
                     ? "bg-[#1FBCF9]"
                     : "border-gray-500"
                 }`}
@@ -73,22 +78,22 @@ export default function Step3({ formData, updateForm, next, back }) {
           </div>
         </div>
 
-        {/* Adherence */}
+        {/* Intensity */}
         <div>
-          <p className="mb-2 font-medium">Do you follow prescription?</p>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-            {adherenceOptions.map((opt) => (
+          <p className="mb-2 font-medium">How intense?</p>
+          <div className="grid grid-cols-5 md:grid-cols-10 gap-2">
+            {intensityLevels.map((level) => (
               <button
-                key={opt}
+                key={level}
                 type="button"
-                onClick={() => updateForm({ prescriptionAdherence: opt })}
+                onClick={() => updateForm({ symptomIntensity: level })}
                 className={`p-2 rounded border ${
-                  formData.prescriptionAdherence === opt
+                  formData.symptomIntensity === level
                     ? "bg-[#1FBCF9]"
                     : "border-gray-500"
                 }`}
               >
-                {opt}
+                {level}
               </button>
             ))}
           </div>
