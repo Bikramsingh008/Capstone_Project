@@ -140,6 +140,15 @@ function AuthPage() {
                 </span>
               </p>
 
+              <div className="pt-4 border-t border-white/10">
+                <button
+                  onClick={() => navigate("/admin/login")}
+                  className="w-full bg-white/5 border border-white/10 py-2 rounded-lg text-sm font-medium hover:bg-white/10 transition text-gray-300 flex justify-center items-center gap-2"
+                >
+                  🔐 Login as Admin
+                </button>
+              </div>
+
             </div>
           </div>
         )}

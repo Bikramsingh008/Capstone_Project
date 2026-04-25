@@ -95,7 +95,7 @@ function Navbar() {
               {isLogged ? (
                 <>
                   <button
-                    onClick={() => navigate("/dashboard")}
+                    onClick={() => navigate("/dashboard", { state: { reset: Date.now() } })}
                     className="hidden md:flex text-white bg-transparent border border-[#1FBCF9] rounded-full px-5 py-2 hover:bg-[#1FBCF9]/10 transition"
                   >
                     Dashboard
@@ -108,12 +108,20 @@ function Navbar() {
                   </button>
                 </>
               ) : (
-                <button
-                  onClick={() => navigate("/signup")}
-                  className="hidden md:flex text-white bg-[#1FBCF9] rounded-full px-5 py-2 hover:bg-[#1aa7de] transition"
-                >
-                  Sign Up
-                </button>
+                <div className="hidden md:flex gap-3">
+                  <button
+                    onClick={() => navigate("/admin/login")}
+                    className="text-gray-400 hover:text-[#1FBCF9] transition text-sm font-medium px-2"
+                  >
+                    Admin
+                  </button>
+                  <button
+                    onClick={() => navigate("/signup")}
+                    className="text-white bg-[#1FBCF9] rounded-full px-5 py-2 hover:bg-[#1aa7de] transition"
+                  >
+                    Sign Up
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -137,7 +145,7 @@ function Navbar() {
                 <>
                   <button
                     onClick={() => {
-                      navigate("/dashboard");
+                      navigate("/dashboard", { state: { reset: Date.now() } });
                       setIsOpen(false);
                     }}
                     className="text-white bg-transparent border border-[#1FBCF9] rounded-full px-5 py-2 w-full max-w-[200px]"
@@ -155,15 +163,26 @@ function Navbar() {
                   </button>
                 </>
               ) : (
-                <button
-                  onClick={() => {
-                    navigate("/signup");
-                    setIsOpen(false);
-                  }}
-                  className="text-white bg-[#1FBCF9] rounded-full px-5 py-2 w-full max-w-[200px]"
-                >
-                  Sign Up
-                </button>
+                <div className="flex flex-col gap-3 w-full items-center">
+                  <button
+                    onClick={() => {
+                      navigate("/signup");
+                      setIsOpen(false);
+                    }}
+                    className="text-white bg-[#1FBCF9] rounded-full px-5 py-2 w-full max-w-[200px]"
+                  >
+                    Sign Up
+                  </button>
+                  <button
+                    onClick={() => {
+                      navigate("/admin/login");
+                      setIsOpen(false);
+                    }}
+                    className="text-gray-400 hover:text-white transition"
+                  >
+                    Admin Login
+                  </button>
+                </div>
               )}
             </div>
           )}

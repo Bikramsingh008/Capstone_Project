@@ -11,6 +11,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const User = require('./models/User');
 const Doctor = require('./models/Doctor');
 const Appointment = require('./models/Appointment');
+const Admin = require('./models/Admin');
 const Report = require('./models/Report');
 const Medication = require('./models/Medication');
 const WellnessRecord = require('./models/WellnessRecord');
@@ -19,7 +20,20 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Connect to Database
-connectDB();
+connectDB().then(async () => {
+    // Seed Admin
+    const adminExists = await Admin.findOne({ username: 'vicky' });
+    if (!adminExists) {
+        const newAdmin = new Admin({ username: 'vicky', password: '1234' });
+        await newAdmin.save();
+        console.log("Admin seeded: vicky/1234");
+    }
+
+    // Update existing doctors with missing emails
+    await Doctor.updateMany({ email: { $exists: false } }, { email: 'doctor@arogya.test' });
+    // Update existing doctors with missing availability
+    await Doctor.updateMany({ availability: { $exists: false } }, { availability: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] });
+});
 
 // Initialize AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -76,6 +90,75 @@ app.put('/api/users/:id', async (req, res) => {
     }
 });
 
+// Admin API
+app.post('/api/admin/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        const admin = await Admin.findOne({ username, password });
+        if (!admin) return res.status(401).json({ error: 'Invalid admin credentials' });
+        res.json({ message: 'Admin login successful', admin });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/admin/doctors', async (req, res) => {
+    try {
+        const doctors = await Doctor.find();
+        res.json(doctors);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/admin/doctors', async (req, res) => {
+    try {
+        const newDoctor = new Doctor(req.body);
+        await newDoctor.save();
+        res.json({ message: 'Doctor added successfully', doctor: newDoctor });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/admin/doctors/:id', async (req, res) => {
+    try {
+        const doctor = await Doctor.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        res.json({ message: 'Doctor updated successfully', doctor });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/admin/doctors/:id', async (req, res) => {
+    try {
+        await Doctor.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Doctor removed successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Admin Appointments API
+app.get('/api/admin/appointments', async (req, res) => {
+    try {
+        const appointments = await Appointment.find().populate('user_id').populate('doctor_id');
+        res.json(appointments);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/appointments/:id/status', async (req, res) => {
+    try {
+        const { status } = req.body;
+        const appointment = await Appointment.findByIdAndUpdate(req.params.id, { status }, { new: true });
+        res.json({ message: 'Appointment status updated', appointment });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Doctors API & Geolocation logic (FR-14)
 app.get('/api/doctors', async (req, res) => {
     try {
@@ -92,11 +175,11 @@ app.get('/api/doctors', async (req, res) => {
             const genericSpec = specialization || 'General Physician';
             
             const mockDoctors = [
-                { name: 'Dr. R. K. Sharma', specialization: genericSpec, location: displayLoc, phone: '+91-9876543210', address: `Central Clinic, ${displayLoc}`, rating: 4.8, image_url: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=300&q=80' },
-                { name: 'Dr. Anita Desai', specialization: 'Cardiologist', location: displayLoc, phone: '+91-9876543211', address: `City Heart Center, ${displayLoc}`, rating: 4.9, image_url: 'https://images.unsplash.com/photo-1594824436998-d50d6ff71c6d?w=300&q=80' },
-                { name: 'Dr. Vikram Singh', specialization: 'Neurologist', location: displayLoc, phone: '+91-9876543212', address: `Brain & Spine Institute, ${displayLoc}`, rating: 4.7, image_url: 'https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=300&q=80' },
-                { name: 'Dr. Meera Patel', specialization: 'Dermatologist', location: displayLoc, phone: '+91-9876543213', address: `Skin Glow Care, ${displayLoc}`, rating: 4.6, image_url: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=300&q=80' },
-                { name: 'Dr. Rahul Verma', specialization: 'Pediatrician', location: displayLoc, phone: '+91-9876543214', address: `Kids Health Clinic, ${displayLoc}`, rating: 4.9, image_url: 'https://images.unsplash.com/photo-1612349317150-e410f624c427?w=300&q=80' }
+                { name: 'Dr. R. K. Sharma', specialization: genericSpec, location: displayLoc, phone: '+91-9876543210', address: `Central Clinic, ${displayLoc}`, rating: 4.8, image_url: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=300&q=80', email: 'drsharma@example.com', availability: ['Monday', 'Wednesday', 'Friday'] },
+                { name: 'Dr. Anita Desai', specialization: 'Cardiologist', location: displayLoc, phone: '+91-9876543211', address: `City Heart Center, ${displayLoc}`, rating: 4.9, image_url: 'https://images.unsplash.com/photo-1594824436998-d50d6ff71c6d?w=300&q=80', email: 'drdesai@example.com', availability: ['Tuesday', 'Thursday', 'Saturday'] },
+                { name: 'Dr. Vikram Singh', specialization: 'Neurologist', location: displayLoc, phone: '+91-9876543212', address: `Brain & Spine Institute, ${displayLoc}`, rating: 4.7, image_url: 'https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=300&q=80', email: 'drvikram@example.com', availability: ['Monday', 'Tuesday', 'Wednesday'] },
+                { name: 'Dr. Meera Patel', specialization: 'Dermatologist', location: displayLoc, phone: '+91-9876543213', address: `Skin Glow Care, ${displayLoc}`, rating: 4.6, image_url: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=300&q=80', email: 'drmeera@example.com', availability: ['Wednesday', 'Thursday', 'Friday'] },
+                { name: 'Dr. Rahul Verma', specialization: 'Pediatrician', location: displayLoc, phone: '+91-9876543214', address: `Kids Health Clinic, ${displayLoc}`, rating: 4.9, image_url: 'https://images.unsplash.com/photo-1612349317150-e410f624c427?w=300&q=80', email: 'drverma@example.com', availability: ['Monday', 'Tuesday', 'Friday'] }
             ];
 
             doctors = await Doctor.insertMany(mockDoctors);
@@ -115,20 +198,44 @@ app.get('/api/doctors', async (req, res) => {
 app.post('/api/appointments', async (req, res) => {
     try {
         const { userId, email, phone, doctorId, doctorName, date, time } = req.body;
+        
+        if (!userId || !doctorId) {
+            return res.status(400).json({ error: 'Missing userId or doctorId' });
+        }
+
+        // Find doctor to get their email and update unavailable dates
+        const doctor = await Doctor.findById(doctorId);
+        if (!doctor) return res.status(404).json({ error: 'Doctor not found' });
+
         const newAppointment = new Appointment({
             user_id: userId, doctor_id: doctorId, date, time
         });
         await newAppointment.save();
 
+        // Mark date as unavailable (simulating a filled slot)
+        if (!doctor.unavailableDates) doctor.unavailableDates = [];
+        if (!doctor.unavailableDates.includes(date)) {
+            doctor.unavailableDates.push(date);
+            await doctor.save();
+        }
+
+        // Send Email to User
         if (email) {
             mailer.sendNotification(email, "Appointment Confirmed: Arogya AI Healthcare", `Your doctor appointment with ${doctorName || 'a specialist'} has been scheduled for ${date} at ${time}.`);
         }
+        
+        // Send Email to Doctor
+        if (doctor.email) {
+            mailer.sendNotification(doctor.email, "New Appointment Booking: Arogya AI Healthcare", `Hello Dr. ${doctor.name}, you have a new appointment booking.\n\nPatient: ${req.body.patientName || 'A User'}\nDate: ${date}\nTime: ${time}\nPatient Phone: ${phone || 'N/A'}`);
+        }
+
         if (phone) {
             sms.sendSMS(phone, `Arogya Notification: Your doctor appointment with ${doctorName} is confirmed for ${date} at ${time}.`);
         }
 
         res.json({ message: 'Appointment booked successfully', appointmentId: newAppointment._id });
     } catch (err) {
+        console.error("Booking API Error:", err);
         res.status(500).json({ error: err.message });
     }
 });

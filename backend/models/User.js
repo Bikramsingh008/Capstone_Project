@@ -11,6 +11,10 @@ const userSchema = new mongoose.Schema({
     height: { type: Number },
     bmi: { type: Number },
     bloodGroup: { type: String },
+    happinessLevel: { type: Number },
+    feeling: { type: String },
+    stressLevel: { type: String },
+    sleepQuality: { type: String },
     createdAt: { type: Date, default: Date.now }
 });
 
