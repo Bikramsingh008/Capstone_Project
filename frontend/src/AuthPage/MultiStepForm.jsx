@@ -57,7 +57,7 @@ function MultiStepForm() {
     try {
       const res = await axios.post("http://localhost:3000/api/users/signup", formData);
       
-      const userData = { ...formData, id: res.data.userId };
+      const userData = { ...formData, _id: res.data.userId };
       sessionStorage.setItem("currentUser", JSON.stringify(userData));
       next();
     } catch (err) {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import axios from "axios";
 import Navbar from "../Pages/LandingPage/Navbar";
 import DoctorAppointments from "./DoctorAppointments";
@@ -15,6 +15,16 @@ function Dashboard() {
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({});
   const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    // Reset to profile tab whenever user navigates back to dashboard via Navbar
+    if (location.pathname === "/dashboard" || location.state?.reset) {
+      setActiveTab("profile");
+      // Clear the state so it doesn't keep resetting on every re-render
+      window.history.replaceState({}, document.title);
+    }
+  }, [location]);
 
   useEffect(() => {
     const stored = sessionStorage.getItem("currentUser");
@@ -49,17 +59,23 @@ function Dashboard() {
 
   const handleSaveProfile = async () => {
     try {
-      if (data?.id) {
-        const res = await axios.put(`http://localhost:3000/api/users/${data.id}`, editForm);
-        setData(res.data.user);
-        setEditForm(res.data.user);
-        sessionStorage.setItem("currentUser", JSON.stringify(res.data.user));
+      const userId = data?._id || data?.id;
+      if (userId) {
+        const res = await axios.put(`http://localhost:3000/api/users/${userId}`, editForm);
+        const updatedUser = res.data.user;
+        setData(updatedUser);
+        setEditForm(updatedUser);
+        sessionStorage.setItem("currentUser", JSON.stringify(updatedUser));
         alert("Profile Successfully Updated!");
       } else {
+        // Handle mock data or unexpected states
         setData(editForm);
+        sessionStorage.setItem("currentUser", JSON.stringify(editForm));
+        alert("Profile updated locally (Mock Mode)");
       }
       setIsEditing(false);
     } catch (err) {
+      console.error(err);
       alert("Error saving profile");
     }
   };
