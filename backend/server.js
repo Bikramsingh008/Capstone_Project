@@ -71,7 +71,7 @@ app.post('/api/users/login', async (req, res) => {
         
         // Notification for successful login
         if (user.phone) {
-            sms.sendSMS(user.phone, `Arogya Notification: Successful login to your account. If this wasn't you, please secure your account.`);
+            sms.sendSMS(user.phone, `Successful login to your account. If this wasn't you, please secure your account.`);
         }
         if (user.email) {
             mailer.sendNotification(user.email, "Login Alert: Arogya AI Healthcare", `Successful login to your account. If this wasn't you, please secure your account.`);
@@ -232,7 +232,7 @@ app.post('/api/appointments', async (req, res) => {
         }
 
         if (phone) {
-            sms.sendSMS(phone, `Arogya Notification: Your doctor appointment with ${doctorName} is confirmed for ${date} at ${time}.`);
+            sms.sendSMS(phone, `Your doctor appointment with ${doctorName || 'a specialist'} has been scheduled for ${date} at ${time}.`);
         }
 
         res.json({ message: 'Appointment booked successfully', appointmentId: newAppointment._id });
@@ -391,15 +391,25 @@ app.get('/api/medications/:userId', async (req, res) => {
 
 app.post('/api/medications', async (req, res) => {
     try {
-        const { userId, email, phone, name, dosage, frequency, time } = req.body;
-        const newMedication = new Medication({ user_id: userId, name, dosage, frequency, time });
+        const { userId, email, phone, name, dosage, frequency, times, dayOfWeek } = req.body;
+        
+        // Handle fallback if frontend still sends old `time`
+        const medicationTimes = times || (req.body.time ? [req.body.time] : []);
+        
+        const newMedication = new Medication({ 
+            user_id: userId, name, dosage, frequency, times: medicationTimes, dayOfWeek 
+        });
         await newMedication.save();
 
+        let scheduleDetails = `Frequency: ${frequency}`;
+        if (frequency === 'Weekly' && dayOfWeek) scheduleDetails += ` on ${dayOfWeek}`;
+        if (medicationTimes.length > 0) scheduleDetails += `\nTime(s): ${medicationTimes.join(', ')}`;
+
         if (email) {
-            mailer.sendNotification(email, "Medication Schedule Configured: Arogya AI Healthcare", `Medicine: ${name} (${dosage})\nFrequency: ${frequency}\nTime: ${time}`);
+            mailer.sendNotification(email, "Medication Schedule Configured: Arogya AI Healthcare", `Medicine: ${name} (${dosage})\n${scheduleDetails}`);
         }
         if (phone) {
-            sms.sendSMS(phone, `Arogya Notification: Medication ${name} at ${time} scheduled successfully.`);
+            sms.sendSMS(phone, `Medicine: ${name} (${dosage})\n${scheduleDetails}`);
         }
         res.json({ message: 'Medication added', medicationId: newMedication._id });
     } catch (err) {
@@ -416,7 +426,7 @@ app.delete('/api/medications/:id', async (req, res) => {
                 mailer.sendNotification(med.user_id.email, "Medication Removed: Arogya AI Healthcare", `Your medication schedule for ${med.name} (${med.dosage}) has been successfully deleted.`);
             }
             if (med.user_id && med.user_id.phone) {
-                sms.sendSMS(med.user_id.phone, `Arogya Notification: Medication ${med.name} has been removed from your schedule.`);
+                sms.sendSMS(med.user_id.phone, `Your medication schedule for ${med.name} (${med.dosage}) has been successfully deleted.`);
             }
         } else {
             return res.status(404).json({ error: 'Medication not found' });

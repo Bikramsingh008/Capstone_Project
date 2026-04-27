@@ -3,7 +3,7 @@ import axios from "axios";
 
 function MedicationManager({ data }) {
   const [medications, setMedications] = useState([]);
-  const [form, setForm] = useState({ name: "", dosage: "", frequency: "Daily", time: "" });
+  const [form, setForm] = useState({ name: "", dosage: "", frequency: "Daily", times: [""], dayOfWeek: "Monday" });
   const [loading, setLoading] = useState(false);
 
   const fetchMedications = async () => {
@@ -18,11 +18,26 @@ function MedicationManager({ data }) {
 
   useEffect(() => {
     fetchMedications();
-  }, []);
+  }, [data]);
+
+  const handleFrequencyChange = (e) => {
+    const newFreq = e.target.value;
+    let newTimes = [""];
+    if (newFreq === "Twice a Day") newTimes = ["", ""];
+    if (newFreq === "As Needed") newTimes = [];
+    setForm({ ...form, frequency: newFreq, times: newTimes });
+  };
+
+  const handleTimeChange = (index, value) => {
+    const newTimes = [...form.times];
+    newTimes[index] = value;
+    setForm({ ...form, times: newTimes });
+  };
 
   const addMedication = async (e) => {
     e.preventDefault();
-    if (!form.name || !form.dosage || !form.time) return;
+    if (!form.name || !form.dosage) return;
+    if (form.times.some(t => !t) && form.frequency !== "As Needed") return;
     setLoading(true);
     try {
       const validId = data?._id || data?.id || "640a1b2c3d4e5f6a7b8c9d0e";
@@ -32,7 +47,7 @@ function MedicationManager({ data }) {
         email: data?.email,
         phone: data?.phone 
       });
-      setForm({ name: "", dosage: "", frequency: "Daily", time: "" });
+      setForm({ name: "", dosage: "", frequency: "Daily", times: [""], dayOfWeek: "Monday" });
       fetchMedications();
       alert(`Medication schedule for ${form.name} saved!\nA reminder confirmation has been sent.`);
     } catch (err) {
@@ -77,7 +92,7 @@ function MedicationManager({ data }) {
           <div>
             <label className="text-sm text-gray-400 block mb-1">Frequency</label>
             <select 
-              value={form.frequency} onChange={(e) => setForm({...form, frequency: e.target.value})}
+              value={form.frequency} onChange={handleFrequencyChange}
               className="w-full bg-gray-900 border border-white/20 px-4 py-2 rounded-lg focus:outline-none focus:border-[#1FBCF9] text-white"
             >
               <option>Daily</option>
@@ -86,14 +101,32 @@ function MedicationManager({ data }) {
               <option>As Needed</option>
             </select>
           </div>
-          <div>
-            <label className="text-sm text-gray-400 block mb-1">Time</label>
-            <input 
-              type="time" required
-              value={form.time} onChange={(e) => setForm({...form, time: e.target.value})}
-              className="w-full bg-black/50 px-4 py-2 rounded-lg border border-white/20 focus:outline-none focus:border-[#1FBCF9] text-white"
-            />
-          </div>
+          
+          {form.frequency === "Weekly" && (
+            <div>
+              <label className="text-sm text-gray-400 block mb-1">Day of Week</label>
+              <select 
+                value={form.dayOfWeek} onChange={(e) => setForm({...form, dayOfWeek: e.target.value})}
+                className="w-full bg-gray-900 border border-white/20 px-4 py-2 rounded-lg focus:outline-none focus:border-[#1FBCF9] text-white"
+              >
+                {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => (
+                  <option key={day}>{day}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {form.times.map((timeVal, index) => (
+            <div key={index}>
+              <label className="text-sm text-gray-400 block mb-1">Time {form.times.length > 1 ? index + 1 : ''}</label>
+              <input 
+                type="time" required
+                value={timeVal} onChange={(e) => handleTimeChange(index, e.target.value)}
+                className="w-full bg-black/50 px-4 py-2 rounded-lg border border-white/20 focus:outline-none focus:border-[#1FBCF9] text-white"
+              />
+            </div>
+          ))}
+          
           <button 
             type="submit" disabled={loading}
             className="w-full bg-[#1FBCF9] px-4 py-2 rounded-lg font-semibold hover:bg-[#15a0d6] transition text-white mt-4"
@@ -122,7 +155,12 @@ function MedicationManager({ data }) {
                 </div>
                 <div>
                   <h3 className="text-xl font-bold">{med.name} <span className="text-sm text-gray-400 font-normal ml-2">({med.dosage})</span></h3>
-                  <p className="text-[#1FBCF9] text-sm mt-1">{med.frequency} at {med.time}</p>
+                  <p className="text-[#1FBCF9] text-sm mt-1">
+                    {med.frequency}
+                    {med.frequency === 'Weekly' && ` on ${med.dayOfWeek}`}
+                    {med.times && med.times.length > 0 && ` at ${med.times.join(' & ')}`}
+                    {!med.times && med.time && ` at ${med.time}`}
+                  </p>
                 </div>
               </div>
               <button 
