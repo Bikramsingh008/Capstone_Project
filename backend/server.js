@@ -15,6 +15,7 @@ const Admin = require('./models/Admin');
 const Report = require('./models/Report');
 const Medication = require('./models/Medication');
 const WellnessRecord = require('./models/WellnessRecord');
+const Prescription = require('./models/Prescription');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -42,7 +43,8 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 cronWorkers.startCronJobs();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ limit: '25mb', extended: true }));
 
 // Users API
 app.post('/api/users/signup', async (req, res) => {
@@ -282,9 +284,19 @@ app.post('/api/chat', async (req, res) => {
 app.post('/api/reports', async (req, res) => {
     try {
         const { userId, symptoms } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-flash-lite-latest" });
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-flash-lite-latest",
+            generationConfig: { responseMimeType: "application/json" }
+        });
 
-        const prompt = `Act as an AI Medical Analyst. Generate a detailed, professional health report based on these symptoms: "${symptoms}". Include potential causes, recommendations, and whether seeing a doctor is advised. End with a disclaimer that this is AI generated.`;
+        const prompt = `Act as an AI Medical Assistant. Based on these symptoms: "${symptoms}", analyze the condition.
+You MUST return ONLY a valid JSON object matching this exact schema, with no markdown code blocks:
+{
+  "normal_symptoms": "Describe what is typically normal for this condition.",
+  "high_risks": "List any red flags, severe warnings, or high-risk indicators to watch out for.",
+  "home_remedies": "Suggest safe and gentle home remedies.",
+  "other_advice": "Provide any other general advice and state whether a doctor visit is recommended."
+}`;
         const result = await model.generateContent(prompt);
         const aiAnalysis = result.response.text();
 
@@ -303,6 +315,65 @@ app.get('/api/reports/:userId', async (req, res) => {
     try {
         const reports = await Report.find({ user_id: req.params.userId }).sort({ created_at: -1 });
         res.json(reports);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Prescription Analysis API
+app.post('/api/prescriptions', async (req, res) => {
+    try {
+        const { userId, imageData } = req.body;
+        // imageData is expected to be a Base64 string e.g. "data:image/jpeg;base64,..."
+        
+        // Extract base64 and mime type
+        const matches = imageData.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+        if (!matches || matches.length !== 3) {
+            return res.status(400).json({ error: 'Invalid image format. Expected base64 data URI.' });
+        }
+        
+        const mimeType = matches[1];
+        const base64Data = matches[2];
+
+        // Use gemini-flash-lite-latest for multimodal analysis
+        const model = genAI.getGenerativeModel({ model: "gemini-flash-lite-latest" });
+
+        const prompt = `You are an expert pharmacist and AI medical assistant. Please carefully analyze this uploaded prescription image.
+Provide a very clear, user-friendly, and simple description of what medications are prescribed, their dosages, and the instructions for taking them.
+If there are any warnings or common side effects to be aware of for these medications, please list them briefly.
+Do NOT use markdown symbols like **, ##, or __. Use plain text with simple dashes for lists.
+Do NOT give definitive medical advice, and end with a short disclaimer that this is AI-generated and the user should confirm with their doctor.`;
+
+        const imagePart = {
+            inlineData: {
+                data: base64Data,
+                mimeType: mimeType
+            }
+        };
+
+        const result = await model.generateContent({
+            contents: [{ role: "user", parts: [{ text: prompt }, imagePart] }]
+        });
+        const aiDescription = result.response.text();
+
+        const newPrescription = new Prescription({
+            user_id: userId,
+            image_data: imageData,
+            ai_description: aiDescription
+        });
+        await newPrescription.save();
+
+        res.json({ message: 'Prescription analyzed successfully', prescription: newPrescription });
+    } catch (err) {
+        console.error("Prescription Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/prescriptions/:userId', async (req, res) => {
+    try {
+        const prescriptions = await Prescription.find({ user_id: req.params.userId }).sort({ created_at: -1 });
+        res.json(prescriptions);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -402,14 +473,44 @@ app.get('/api/wellness-checkin/:userId', async (req, res) => {
 });
 
 app.get('/api/wellness', (req, res) => {
-    const tips = [
-        { id: 1, category: 'Nutrition', title: 'Eat the Rainbow', description: 'Include a variety of colorful fruits and vegetables in your diet.', icon: '🥗' },
-        { id: 2, category: 'Sleep', title: 'Maintain a Schedule', description: 'Go to bed and wake up at the same time to regulate your circadian rhythm.', icon: '😴' },
-        { id: 3, category: 'Exercise', title: 'Stay Active', description: 'Aim for at least 30 minutes of activity every day.', icon: '🏃' },
-        { id: 4, category: 'Hydration', title: 'Drink Water', description: 'Drink at least 8 glasses of water a day.', icon: '💧' },
-        { id: 5, category: 'Mental Health', title: 'Practice Mindfulness', description: 'Take 5 minutes for deep breathing to reduce stress.', icon: '🧘' }
+    const allTips = [
+        { id: 1,  category: 'Nutrition',      title: 'Eat the Rainbow',          description: 'Include a variety of colorful fruits and vegetables in your diet for broad nutrient coverage.', icon: '🥗' },
+        { id: 2,  category: 'Sleep',          title: 'Maintain a Schedule',      description: 'Go to bed and wake up at the same time every day to regulate your circadian rhythm.', icon: '😴' },
+        { id: 3,  category: 'Exercise',       title: 'Stay Active',              description: 'Aim for at least 30 minutes of moderate physical activity every day to boost overall health.', icon: '🏃' },
+        { id: 4,  category: 'Hydration',      title: 'Drink More Water',         description: 'Drink at least 8 glasses of water a day. Proper hydration boosts energy and brain function.', icon: '💧' },
+        { id: 5,  category: 'Mental Health',  title: 'Practice Mindfulness',     description: 'Take 5 minutes for deep breathing or meditation to significantly reduce daily stress.', icon: '🧘' },
+        { id: 6,  category: 'Nutrition',      title: 'Reduce Sugar Intake',      description: 'Cutting down on added sugar lowers your risk of diabetes, obesity, and heart disease.', icon: '🍬' },
+        { id: 7,  category: 'Sleep',          title: 'Avoid Screens at Night',   description: 'Blue light from devices disrupts melatonin. Switch off screens 1 hour before bed.', icon: '📵' },
+        { id: 8,  category: 'Exercise',       title: 'Take the Stairs',          description: 'Small choices like taking stairs over elevators accumulate into significant fitness gains over time.', icon: '🪜' },
+        { id: 9,  category: 'Hydration',      title: 'Start Your Day with Water',description: 'Drink a glass of water first thing in the morning to rehydrate your body after sleep.', icon: '🌅' },
+        { id: 10, category: 'Mental Health',  title: 'Journal Your Thoughts',    description: 'Writing down your feelings for 10 minutes a day can reduce anxiety and improve mood clarity.', icon: '📓' },
+        { id: 11, category: 'Nutrition',      title: 'Eat Mindfully',            description: 'Slow down and savor each bite. Mindful eating improves digestion and prevents overeating.', icon: '🍽️' },
+        { id: 12, category: 'Sleep',          title: 'Create a Sleep Ritual',    description: 'A relaxing pre-sleep ritual like reading or herbal tea trains your brain to wind down naturally.', icon: '🛁' },
+        { id: 13, category: 'Exercise',       title: 'Stretch Every Morning',    description: 'A 5-minute morning stretch routine improves flexibility, blood flow, and reduces injury risk.', icon: '🤸' },
+        { id: 14, category: 'Hydration',      title: 'Eat Water-Rich Foods',     description: 'Cucumbers, watermelon, and oranges are over 90% water — great for hydration from food.', icon: '🍉' },
+        { id: 15, category: 'Mental Health',  title: 'Connect with Others',      description: 'Strong social connections are linked to a longer, healthier, and happier life. Reach out today.', icon: '🤝' },
+        { id: 16, category: 'Nutrition',      title: 'Add More Fiber',           description: 'High-fiber foods like legumes, oats, and greens support a healthy gut and lower cholesterol.', icon: '🌾' },
+        { id: 17, category: 'Sleep',          title: 'Keep Your Room Cool',      description: 'The ideal sleep temperature is around 18°C (65°F). A cool room promotes deeper sleep.', icon: '❄️' },
+        { id: 18, category: 'Exercise',       title: 'Walk After Meals',         description: 'A 10-minute walk after eating aids digestion and helps regulate blood sugar levels.', icon: '🚶' },
+        { id: 19, category: 'Hydration',      title: 'Limit Caffeine',           description: 'Excessive caffeine acts as a diuretic and can lead to dehydration. Limit to 2-3 cups per day.', icon: '☕' },
+        { id: 20, category: 'Mental Health',  title: 'Spend Time in Nature',     description: 'Even 20 minutes outdoors in green space measurably reduces cortisol (stress hormone) levels.', icon: '🌿' },
+        { id: 21, category: 'Nutrition',      title: 'Prioritize Protein',       description: 'Protein keeps you full longer, preserves muscle mass, and supports immune function.', icon: '🥩' },
+        { id: 22, category: 'Sleep',          title: 'Limit Naps',               description: 'If you nap, keep it under 20 minutes and before 3pm to avoid disrupting nighttime sleep.', icon: '⏰' },
+        { id: 23, category: 'Exercise',       title: 'Try Yoga',                 description: 'Yoga combines physical movement with breathing and mindfulness — triple health benefits in one.', icon: '🧘' },
+        { id: 24, category: 'Hydration',      title: 'Flavor Your Water',        description: 'Add slices of lemon, cucumber, or mint to make drinking water more enjoyable.', icon: '🍋' },
+        { id: 25, category: 'Mental Health',  title: 'Practice Gratitude',       description: 'Write down 3 things you are grateful for each day. It rewires the brain toward positivity.', icon: '🙏' },
+        { id: 26, category: 'Nutrition',      title: 'Healthy Snacking',         description: 'Replace processed snacks with nuts, seeds, or fruits to sustain energy and focus throughout the day.', icon: '🥜' },
+        { id: 27, category: 'Sleep',          title: 'Avoid Alcohol Before Bed', description: 'Alcohol disrupts REM sleep cycles, leaving you feeling less rested even after a full night.', icon: '🚫' },
+        { id: 28, category: 'Exercise',       title: 'Strength Train Weekly',    description: 'Resistance training 2-3 times per week boosts metabolism and protects bone density as you age.', icon: '💪' },
+        { id: 29, category: 'Hydration',      title: 'Track Your Intake',        description: 'Use an app or a marked bottle to track your daily water intake and hit your hydration goals.', icon: '📱' },
+        { id: 30, category: 'Mental Health',  title: 'Take Digital Breaks',      description: 'Schedule short screen-free breaks during your day to reduce eye strain and mental fatigue.', icon: '🧠' },
     ];
-    res.json(tips);
+
+    // Rotate tips every 10 minutes: pick 5 based on current 10-minute window
+    const now = new Date();
+    const tenMinWindow = Math.floor((now.getHours() * 60 + now.getMinutes()) / 10); // 0-143
+    const startIndex = (tenMinWindow * 5) % allTips.length;
+    res.json(allTips); // Send all tips; frontend handles rotation
 });
 
 app.listen(PORT, () => {
