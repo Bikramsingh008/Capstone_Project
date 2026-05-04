@@ -22,7 +22,7 @@ function MultiStepForm() {
     diastolic: "",
     bmi: "",
     bloodGroup: "",
-    symptom: "",
+    symptoms: [],
     symptomDuration: "",
     symptomIntensity: "",
     medicines: "",

@@ -42,6 +42,33 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 // Initialize continuous background processing logic
 cronWorkers.startCronJobs();
 
+const cleanAIResponse = (text) => {
+    return text.replace(/```json/g, "").replace(/```/g, "").trim();
+};
+
+async function generateWithRetry(model, content, maxRetries = 5) {
+    let lastError;
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            return await model.generateContent(content);
+        } catch (err) {
+            lastError = err;
+            const status = err.status || (err.response && err.response.status);
+            const isRetryable = status === 503 || status === 429 ||
+                (err.message && (err.message.includes('503') || err.message.includes('429') || err.message.includes('high demand') || err.message.includes('Service Unavailable')));
+
+            if (isRetryable && i < maxRetries - 1) {
+                const waitTime = Math.pow(2, i) * 3000; // 3s, 6s, 12s, 24s...
+                console.log(`AI Service Busy (Attempt ${i + 1}/${maxRetries}). Retrying in ${waitTime}ms...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+                continue;
+            }
+            throw err;
+        }
+    }
+    throw lastError;
+}
+
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ limit: '25mb', extended: true }));
@@ -51,7 +78,7 @@ app.post('/api/users/signup', async (req, res) => {
     try {
         const newUser = new User(req.body);
         await newUser.save();
-        
+
         // SMS Notification for account creation
         if (newUser.phone) {
             sms.sendSMS(newUser.phone, `Welcome to Arogya Healthcare, ${newUser.username}! Your account has been created successfully.`);
@@ -68,7 +95,7 @@ app.post('/api/users/login', async (req, res) => {
         const { username, password } = req.body;
         const user = await User.findOne({ username, password });
         if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-        
+
         // Notification for successful login
         if (user.phone) {
             sms.sendSMS(user.phone, `Successful login to your account. If this wasn't you, please secure your account.`);
@@ -175,7 +202,7 @@ app.get('/api/doctors', async (req, res) => {
             // Seed mock doctors if none exist for demo
             const displayLoc = location.trim().charAt(0).toUpperCase() + location.trim().slice(1);
             const genericSpec = specialization || 'General Physician';
-            
+
             const mockDoctors = [
                 { name: 'Dr. R. K. Sharma', specialization: genericSpec, location: displayLoc, phone: '+91-9876543210', address: `Central Clinic, ${displayLoc}`, rating: 4.8, image_url: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=300&q=80', email: 'drsharma@example.com', availability: ['Monday', 'Wednesday', 'Friday'] },
                 { name: 'Dr. Anita Desai', specialization: 'Cardiologist', location: displayLoc, phone: '+91-9876543211', address: `City Heart Center, ${displayLoc}`, rating: 4.9, image_url: 'https://images.unsplash.com/photo-1594824436998-d50d6ff71c6d?w=300&q=80', email: 'drdesai@example.com', availability: ['Tuesday', 'Thursday', 'Saturday'] },
@@ -185,9 +212,9 @@ app.get('/api/doctors', async (req, res) => {
             ];
 
             doctors = await Doctor.insertMany(mockDoctors);
-            
+
             if (specialization) {
-                 doctors = doctors.filter(d => d.specialization.toLowerCase().includes(specialization.toLowerCase() || ''));
+                doctors = doctors.filter(d => d.specialization.toLowerCase().includes(specialization.toLowerCase() || ''));
             }
         }
         res.json(doctors);
@@ -200,7 +227,7 @@ app.get('/api/doctors', async (req, res) => {
 app.post('/api/appointments', async (req, res) => {
     try {
         const { userId, email, phone, doctorId, doctorName, date, time } = req.body;
-        
+
         if (!userId || !doctorId) {
             return res.status(400).json({ error: 'Missing userId or doctorId' });
         }
@@ -225,11 +252,14 @@ app.post('/api/appointments', async (req, res) => {
         if (email) {
             mailer.sendNotification(email, "Appointment Confirmed: Arogya AI Healthcare", `Your doctor appointment with ${doctorName || 'a specialist'} has been scheduled for ${date} at ${time}.`);
         }
-        
+
         // Send Email to Doctor
         if (doctor.email) {
             mailer.sendNotification(doctor.email, "New Appointment Booking: Arogya AI Healthcare", `Hello Dr. ${doctor.name}, you have a new appointment booking.\n\nPatient: ${req.body.patientName || 'A User'}\nDate: ${date}\nTime: ${time}\nPatient Phone: ${phone || 'N/A'}`);
         }
+
+        // Also send to central doctor dummy email as requested
+        mailer.sendNotification("exampledoctor165@gmail.com", "New Patient Appointment: Arogya AI Healthcare", `A new appointment has been booked.\n\nDoctor: ${doctor.name}\nPatient: ${req.body.patientName || 'A User'}\nDate: ${date}\nTime: ${time}\nPatient Phone: ${phone || 'N/A'}`);
 
         if (phone) {
             sms.sendSMS(phone, `Your doctor appointment with ${doctorName || 'a specialist'} has been scheduled for ${date} at ${time}.`);
@@ -244,8 +274,8 @@ app.post('/api/appointments', async (req, res) => {
 
 app.get('/api/appointments/:userId', async (req, res) => {
     try {
-         const appointments = await Appointment.find({ user_id: req.params.userId }).populate('doctor_id');
-         res.json(appointments);
+        const appointments = await Appointment.find({ user_id: req.params.userId }).populate('doctor_id');
+        res.json(appointments);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -255,14 +285,14 @@ app.get('/api/appointments/:userId', async (req, res) => {
 app.post('/api/chat', async (req, res) => {
     try {
         const { message, userId } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-flash-lite-latest" });
+        const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
 
         let context = "You are Arogya, an empathetic AI Healthcare Assistant.";
         if (userId) {
-             const user = await User.findById(userId);
-             if (user) {
-                 context += ` You are speaking to ${user.username}, age ${user.age}.`;
-             }
+            const user = await User.findById(userId);
+            if (user) {
+                context += ` You are speaking to ${user.username}, age ${user.age}.`;
+            }
         }
         context += ` 
         If they mention severe symptoms, recommend emergency support (FR-16).
@@ -271,7 +301,7 @@ app.post('/api/chat', async (req, res) => {
         `;
 
         const prompt = `${context}\n\nUser: ${message}\nAssistant:`;
-        const result = await model.generateContent(prompt);
+        const result = await generateWithRetry(model, prompt);
         const reply = result.response.text();
         res.json({ reply });
     } catch (err) {
@@ -284,8 +314,12 @@ app.post('/api/chat', async (req, res) => {
 app.post('/api/reports', async (req, res) => {
     try {
         const { userId, symptoms } = req.body;
-        const model = genAI.getGenerativeModel({ 
-            model: "gemini-flash-lite-latest",
+        if (!userId) return res.status(400).json({ error: 'User ID is required' });
+
+        // NEW: Delete previous reports for this user so only the latest one is kept
+        await Report.deleteMany({ user_id: userId });
+        const model = genAI.getGenerativeModel({
+            model: "gemini-flash-latest",
             generationConfig: { responseMimeType: "application/json" }
         });
 
@@ -297,8 +331,10 @@ You MUST return ONLY a valid JSON object matching this exact schema, with no mar
   "home_remedies": "Suggest safe and gentle home remedies.",
   "other_advice": "Provide any other general advice and state whether a doctor visit is recommended."
 }`;
-        const result = await model.generateContent(prompt);
-        const aiAnalysis = result.response.text();
+        const result = await generateWithRetry(model, prompt);
+        let aiAnalysis = result.response.text();
+        aiAnalysis = cleanAIResponse(aiAnalysis);
+        console.log("AI Analysis Result:", aiAnalysis);
 
         const newReport = new Report({
             user_id: userId, symptoms, ai_analysis: aiAnalysis
@@ -324,37 +360,56 @@ app.get('/api/reports/:userId', async (req, res) => {
 app.post('/api/prescriptions', async (req, res) => {
     try {
         const { userId, imageData } = req.body;
-        // imageData is expected to be a Base64 string e.g. "data:image/jpeg;base64,..."
-        
-        // Extract base64 and mime type
+        if (!userId) return res.status(400).json({ error: 'User ID is required' });
+        if (!imageData) return res.status(400).json({ error: 'Image data is required' });
+
+        // Store all prescriptions to maintain history
+
         const matches = imageData.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
         if (!matches || matches.length !== 3) {
-            return res.status(400).json({ error: 'Invalid image format. Expected base64 data URI.' });
+            return res.status(400).json({ error: 'Invalid image format.' });
         }
-        
+
         const mimeType = matches[1];
         const base64Data = matches[2];
 
-        // Use gemini-flash-lite-latest for multimodal analysis
-        const model = genAI.getGenerativeModel({ model: "gemini-flash-lite-latest" });
-
-        const prompt = `You are an expert pharmacist and AI medical assistant. Please carefully analyze this uploaded prescription image.
-Provide a very clear, user-friendly, and simple description of what medications are prescribed, their dosages, and the instructions for taking them.
-If there are any warnings or common side effects to be aware of for these medications, please list them briefly.
-Do NOT use markdown symbols like **, ##, or __. Use plain text with simple dashes for lists.
-Do NOT give definitive medical advice, and end with a short disclaimer that this is AI-generated and the user should confirm with their doctor.`;
-
-        const imagePart = {
-            inlineData: {
-                data: base64Data,
-                mimeType: mimeType
-            }
-        };
-
-        const result = await model.generateContent({
-            contents: [{ role: "user", parts: [{ text: prompt }, imagePart] }]
+        const model = genAI.getGenerativeModel({
+            model: "gemini-2.5-flash",
+            generationConfig: { responseMimeType: "application/json" }
         });
-        const aiDescription = result.response.text();
+
+        const prompt = `You are an expert pharmacist and AI medical assistant. Please carefully analyze this uploaded document (prescription or lab report).
+Provide a professional, in-depth analysis and return ONLY a valid JSON object matching this exact schema:
+{
+  "document_type": "prescription | lab_report | both",
+  "summary": "Detailed summary of the document.",
+  "condition_diagnosis": "Possible condition or diagnosis based on markers.",
+  "doctors_notes": "Simple doctor's notes explaining the next steps.",
+  "lab_results": [
+    { "test_name": "e.g. Hemoglobin", "value": "12.5", "normal_range": "13.0 - 17.0", "status": "Normal/High/Low", "interpretation": "Short note on what this means" }
+  ],
+  "medications": [
+    { "name": "Name of medicine", "dosage": "e.g. 500mg", "timing": "e.g. Twice a day", "purpose": "What it is for" }
+  ],
+  "warnings": "Red flags or safety warnings.",
+  "disclaimer": "AI-generated disclaimer"
+}`;
+
+        let aiDescription = "";
+        try {
+            const result = await generateWithRetry(model, {
+                contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { data: base64Data, mimeType } }] }]
+            });
+            aiDescription = cleanAIResponse(result.response.text());
+        } catch (aiErr) {
+            console.error("Prescription AI Error:", aiErr);
+            aiDescription = JSON.stringify({
+                summary: "AI analysis is currently unavailable due to high demand. Please try again in a few minutes.",
+                condition_diagnosis: "N/A",
+                doctors_notes: "Service temporarily overloaded. Error: " + (aiErr.status || "503"),
+                document_type: "error"
+            });
+        }
 
         const newPrescription = new Prescription({
             user_id: userId,
@@ -363,13 +418,12 @@ Do NOT give definitive medical advice, and end with a short disclaimer that this
         });
         await newPrescription.save();
 
-        res.json({ message: 'Prescription analyzed successfully', prescription: newPrescription });
+        res.json({ message: 'Success', prescription: newPrescription });
     } catch (err) {
-        console.error("Prescription Error:", err);
+        console.error("Prescription Route Error:", err);
         res.status(500).json({ error: err.message });
     }
 });
-
 app.get('/api/prescriptions/:userId', async (req, res) => {
     try {
         const prescriptions = await Prescription.find({ user_id: req.params.userId }).sort({ created_at: -1 });
@@ -392,12 +446,12 @@ app.get('/api/medications/:userId', async (req, res) => {
 app.post('/api/medications', async (req, res) => {
     try {
         const { userId, email, phone, name, dosage, frequency, times, dayOfWeek } = req.body;
-        
+
         // Handle fallback if frontend still sends old `time`
         const medicationTimes = times || (req.body.time ? [req.body.time] : []);
-        
-        const newMedication = new Medication({ 
-            user_id: userId, name, dosage, frequency, times: medicationTimes, dayOfWeek 
+
+        const newMedication = new Medication({
+            user_id: userId, name, dosage, frequency, times: medicationTimes, dayOfWeek
         });
         await newMedication.save();
 
@@ -442,10 +496,10 @@ app.post('/api/wellness-checkin', async (req, res) => {
     try {
         const { userId, mood, stressLevel, energyLevel, sleepQuality, journalEntry } = req.body;
         const riskScore = (stressLevel * 2) - energyLevel + (mood === 'Sad' || mood === 'Anxious' ? 10 : 0);
-        
+
         let aiFeedback = "Thank you for checking in today.";
         try {
-            const model = genAI.getGenerativeModel({ model: "gemini-flash-lite-latest" });
+            const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
             const prompt = `You are a highly empathetic, friendly, and comforting virtual psychologist. Your patient has submitted a daily wellness check-in:
 Mood: ${mood}
 Stress Level: ${stressLevel}/10
@@ -454,14 +508,14 @@ Sleep Quality: ${sleepQuality}
 Journal Entry: "${journalEntry || 'No journal entry provided.'}"
 
 Please analyze their state and provide a short, compassionate response (around 3-4 sentences). Act as their virtual doctor. Provide gentle, actionable remedies tailored to their current state and journal entry (if provided). If they indicate feelings of depression, anxiety, or high stress, be extremely supportive, validate their feelings, and suggest soothing coping mechanisms. Write your response directly to the patient in a warm, comforting tone.`;
-            
-            const result = await model.generateContent(prompt);
+
+            const result = await generateWithRetry(model, prompt);
             aiFeedback = result.response.text();
         } catch (aiErr) {
             console.error("AI Feedback Error:", aiErr);
             aiFeedback = "Your check-in has been recorded. Remember to take deep breaths and be kind to yourself today.";
         }
-        
+
         const record = new WellnessRecord({
             user_id: userId, mood, stressLevel, energyLevel, sleepQuality, journalEntry, riskScore, aiFeedback
         });
@@ -484,36 +538,36 @@ app.get('/api/wellness-checkin/:userId', async (req, res) => {
 
 app.get('/api/wellness', (req, res) => {
     const allTips = [
-        { id: 1,  category: 'Nutrition',      title: 'Eat the Rainbow',          description: 'Include a variety of colorful fruits and vegetables in your diet for broad nutrient coverage.', icon: '🥗' },
-        { id: 2,  category: 'Sleep',          title: 'Maintain a Schedule',      description: 'Go to bed and wake up at the same time every day to regulate your circadian rhythm.', icon: '😴' },
-        { id: 3,  category: 'Exercise',       title: 'Stay Active',              description: 'Aim for at least 30 minutes of moderate physical activity every day to boost overall health.', icon: '🏃' },
-        { id: 4,  category: 'Hydration',      title: 'Drink More Water',         description: 'Drink at least 8 glasses of water a day. Proper hydration boosts energy and brain function.', icon: '💧' },
-        { id: 5,  category: 'Mental Health',  title: 'Practice Mindfulness',     description: 'Take 5 minutes for deep breathing or meditation to significantly reduce daily stress.', icon: '🧘' },
-        { id: 6,  category: 'Nutrition',      title: 'Reduce Sugar Intake',      description: 'Cutting down on added sugar lowers your risk of diabetes, obesity, and heart disease.', icon: '🍬' },
-        { id: 7,  category: 'Sleep',          title: 'Avoid Screens at Night',   description: 'Blue light from devices disrupts melatonin. Switch off screens 1 hour before bed.', icon: '📵' },
-        { id: 8,  category: 'Exercise',       title: 'Take the Stairs',          description: 'Small choices like taking stairs over elevators accumulate into significant fitness gains over time.', icon: '🪜' },
-        { id: 9,  category: 'Hydration',      title: 'Start Your Day with Water',description: 'Drink a glass of water first thing in the morning to rehydrate your body after sleep.', icon: '🌅' },
-        { id: 10, category: 'Mental Health',  title: 'Journal Your Thoughts',    description: 'Writing down your feelings for 10 minutes a day can reduce anxiety and improve mood clarity.', icon: '📓' },
-        { id: 11, category: 'Nutrition',      title: 'Eat Mindfully',            description: 'Slow down and savor each bite. Mindful eating improves digestion and prevents overeating.', icon: '🍽️' },
-        { id: 12, category: 'Sleep',          title: 'Create a Sleep Ritual',    description: 'A relaxing pre-sleep ritual like reading or herbal tea trains your brain to wind down naturally.', icon: '🛁' },
-        { id: 13, category: 'Exercise',       title: 'Stretch Every Morning',    description: 'A 5-minute morning stretch routine improves flexibility, blood flow, and reduces injury risk.', icon: '🤸' },
-        { id: 14, category: 'Hydration',      title: 'Eat Water-Rich Foods',     description: 'Cucumbers, watermelon, and oranges are over 90% water — great for hydration from food.', icon: '🍉' },
-        { id: 15, category: 'Mental Health',  title: 'Connect with Others',      description: 'Strong social connections are linked to a longer, healthier, and happier life. Reach out today.', icon: '🤝' },
-        { id: 16, category: 'Nutrition',      title: 'Add More Fiber',           description: 'High-fiber foods like legumes, oats, and greens support a healthy gut and lower cholesterol.', icon: '🌾' },
-        { id: 17, category: 'Sleep',          title: 'Keep Your Room Cool',      description: 'The ideal sleep temperature is around 18°C (65°F). A cool room promotes deeper sleep.', icon: '❄️' },
-        { id: 18, category: 'Exercise',       title: 'Walk After Meals',         description: 'A 10-minute walk after eating aids digestion and helps regulate blood sugar levels.', icon: '🚶' },
-        { id: 19, category: 'Hydration',      title: 'Limit Caffeine',           description: 'Excessive caffeine acts as a diuretic and can lead to dehydration. Limit to 2-3 cups per day.', icon: '☕' },
-        { id: 20, category: 'Mental Health',  title: 'Spend Time in Nature',     description: 'Even 20 minutes outdoors in green space measurably reduces cortisol (stress hormone) levels.', icon: '🌿' },
-        { id: 21, category: 'Nutrition',      title: 'Prioritize Protein',       description: 'Protein keeps you full longer, preserves muscle mass, and supports immune function.', icon: '🥩' },
-        { id: 22, category: 'Sleep',          title: 'Limit Naps',               description: 'If you nap, keep it under 20 minutes and before 3pm to avoid disrupting nighttime sleep.', icon: '⏰' },
-        { id: 23, category: 'Exercise',       title: 'Try Yoga',                 description: 'Yoga combines physical movement with breathing and mindfulness — triple health benefits in one.', icon: '🧘' },
-        { id: 24, category: 'Hydration',      title: 'Flavor Your Water',        description: 'Add slices of lemon, cucumber, or mint to make drinking water more enjoyable.', icon: '🍋' },
-        { id: 25, category: 'Mental Health',  title: 'Practice Gratitude',       description: 'Write down 3 things you are grateful for each day. It rewires the brain toward positivity.', icon: '🙏' },
-        { id: 26, category: 'Nutrition',      title: 'Healthy Snacking',         description: 'Replace processed snacks with nuts, seeds, or fruits to sustain energy and focus throughout the day.', icon: '🥜' },
-        { id: 27, category: 'Sleep',          title: 'Avoid Alcohol Before Bed', description: 'Alcohol disrupts REM sleep cycles, leaving you feeling less rested even after a full night.', icon: '🚫' },
-        { id: 28, category: 'Exercise',       title: 'Strength Train Weekly',    description: 'Resistance training 2-3 times per week boosts metabolism and protects bone density as you age.', icon: '💪' },
-        { id: 29, category: 'Hydration',      title: 'Track Your Intake',        description: 'Use an app or a marked bottle to track your daily water intake and hit your hydration goals.', icon: '📱' },
-        { id: 30, category: 'Mental Health',  title: 'Take Digital Breaks',      description: 'Schedule short screen-free breaks during your day to reduce eye strain and mental fatigue.', icon: '🧠' },
+        { id: 1, category: 'Nutrition', title: 'Eat the Rainbow', description: 'Include a variety of colorful fruits and vegetables in your diet for broad nutrient coverage.', icon: '🥗' },
+        { id: 2, category: 'Sleep', title: 'Maintain a Schedule', description: 'Go to bed and wake up at the same time every day to regulate your circadian rhythm.', icon: '😴' },
+        { id: 3, category: 'Exercise', title: 'Stay Active', description: 'Aim for at least 30 minutes of moderate physical activity every day to boost overall health.', icon: '🏃' },
+        { id: 4, category: 'Hydration', title: 'Drink More Water', description: 'Drink at least 8 glasses of water a day. Proper hydration boosts energy and brain function.', icon: '💧' },
+        { id: 5, category: 'Mental Health', title: 'Practice Mindfulness', description: 'Take 5 minutes for deep breathing or meditation to significantly reduce daily stress.', icon: '🧘' },
+        { id: 6, category: 'Nutrition', title: 'Reduce Sugar Intake', description: 'Cutting down on added sugar lowers your risk of diabetes, obesity, and heart disease.', icon: '🍬' },
+        { id: 7, category: 'Sleep', title: 'Avoid Screens at Night', description: 'Blue light from devices disrupts melatonin. Switch off screens 1 hour before bed.', icon: '📵' },
+        { id: 8, category: 'Exercise', title: 'Take the Stairs', description: 'Small choices like taking stairs over elevators accumulate into significant fitness gains over time.', icon: '🪜' },
+        { id: 9, category: 'Hydration', title: 'Start Your Day with Water', description: 'Drink a glass of water first thing in the morning to rehydrate your body after sleep.', icon: '🌅' },
+        { id: 10, category: 'Mental Health', title: 'Journal Your Thoughts', description: 'Writing down your feelings for 10 minutes a day can reduce anxiety and improve mood clarity.', icon: '📓' },
+        { id: 11, category: 'Nutrition', title: 'Eat Mindfully', description: 'Slow down and savor each bite. Mindful eating improves digestion and prevents overeating.', icon: '🍽️' },
+        { id: 12, category: 'Sleep', title: 'Create a Sleep Ritual', description: 'A relaxing pre-sleep ritual like reading or herbal tea trains your brain to wind down naturally.', icon: '🛁' },
+        { id: 13, category: 'Exercise', title: 'Stretch Every Morning', description: 'A 5-minute morning stretch routine improves flexibility, blood flow, and reduces injury risk.', icon: '🤸' },
+        { id: 14, category: 'Hydration', title: 'Eat Water-Rich Foods', description: 'Cucumbers, watermelon, and oranges are over 90% water — great for hydration from food.', icon: '🍉' },
+        { id: 15, category: 'Mental Health', title: 'Connect with Others', description: 'Strong social connections are linked to a longer, healthier, and happier life. Reach out today.', icon: '🤝' },
+        { id: 16, category: 'Nutrition', title: 'Add More Fiber', description: 'High-fiber foods like legumes, oats, and greens support a healthy gut and lower cholesterol.', icon: '🌾' },
+        { id: 17, category: 'Sleep', title: 'Keep Your Room Cool', description: 'The ideal sleep temperature is around 18°C (65°F). A cool room promotes deeper sleep.', icon: '❄️' },
+        { id: 18, category: 'Exercise', title: 'Walk After Meals', description: 'A 10-minute walk after eating aids digestion and helps regulate blood sugar levels.', icon: '🚶' },
+        { id: 19, category: 'Hydration', title: 'Limit Caffeine', description: 'Excessive caffeine acts as a diuretic and can lead to dehydration. Limit to 2-3 cups per day.', icon: '☕' },
+        { id: 20, category: 'Mental Health', title: 'Spend Time in Nature', description: 'Even 20 minutes outdoors in green space measurably reduces cortisol (stress hormone) levels.', icon: '🌿' },
+        { id: 21, category: 'Nutrition', title: 'Prioritize Protein', description: 'Protein keeps you full longer, preserves muscle mass, and supports immune function.', icon: '🥩' },
+        { id: 22, category: 'Sleep', title: 'Limit Naps', description: 'If you nap, keep it under 20 minutes and before 3pm to avoid disrupting nighttime sleep.', icon: '⏰' },
+        { id: 23, category: 'Exercise', title: 'Try Yoga', description: 'Yoga combines physical movement with breathing and mindfulness — triple health benefits in one.', icon: '🧘' },
+        { id: 24, category: 'Hydration', title: 'Flavor Your Water', description: 'Add slices of lemon, cucumber, or mint to make drinking water more enjoyable.', icon: '🍋' },
+        { id: 25, category: 'Mental Health', title: 'Practice Gratitude', description: 'Write down 3 things you are grateful for each day. It rewires the brain toward positivity.', icon: '🙏' },
+        { id: 26, category: 'Nutrition', title: 'Healthy Snacking', description: 'Replace processed snacks with nuts, seeds, or fruits to sustain energy and focus throughout the day.', icon: '🥜' },
+        { id: 27, category: 'Sleep', title: 'Avoid Alcohol Before Bed', description: 'Alcohol disrupts REM sleep cycles, leaving you feeling less rested even after a full night.', icon: '🚫' },
+        { id: 28, category: 'Exercise', title: 'Strength Train Weekly', description: 'Resistance training 2-3 times per week boosts metabolism and protects bone density as you age.', icon: '💪' },
+        { id: 29, category: 'Hydration', title: 'Track Your Intake', description: 'Use an app or a marked bottle to track your daily water intake and hit your hydration goals.', icon: '📱' },
+        { id: 30, category: 'Mental Health', title: 'Take Digital Breaks', description: 'Schedule short screen-free breaks during your day to reduce eye strain and mental fatigue.', icon: '🧠' },
     ];
 
     // Rotate tips every 10 minutes: pick 5 based on current 10-minute window

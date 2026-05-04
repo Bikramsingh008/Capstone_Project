@@ -44,11 +44,17 @@ export default function Step2({ formData, updateForm, next, back }) {
               <button
                 key={sym}
                 type="button"
-                onClick={() => updateForm({ symptom: sym })}
+                onClick={() => {
+                  const currentSymptoms = formData.symptoms || [];
+                  const newSymptoms = currentSymptoms.includes(sym)
+                    ? currentSymptoms.filter((s) => s !== sym)
+                    : [...currentSymptoms, sym];
+                  updateForm({ symptoms: newSymptoms });
+                }}
                 className={`p-2 rounded border ${
-                  formData.symptom === sym
-                    ? "bg-[#1FBCF9]"
-                    : "border-gray-500"
+                  formData.symptoms?.includes(sym)
+                    ? "bg-[#1FBCF9] text-white border-[#1FBCF9]"
+                    : "border-gray-500 text-gray-300"
                 }`}
               >
                 {sym}

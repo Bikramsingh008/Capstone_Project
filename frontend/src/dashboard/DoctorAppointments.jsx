@@ -267,7 +267,7 @@ function DoctorAppointments({ data }) {
              type="text"
              value={location}
              onChange={(e) => setLocation(e.target.value)}
-             placeholder="Location (e.g., New York)"
+             placeholder="Enter Location"
              className="w-full bg-white/10 px-4 py-2 rounded-lg border border-white/20 focus:outline-none focus:border-[#1FBCF9] text-white"
            />
            <button 
