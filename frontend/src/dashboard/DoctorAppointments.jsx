@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
+// If you get an error that jsPDF is not a constructor, you may need to use:
+// import jsPDF from "jspdf";
 
 function DoctorAppointments({ data }) {
   const [location, setLocation] = useState("");
@@ -79,7 +80,7 @@ function DoctorAppointments({ data }) {
     }
     try {
       const time = "10:00 AM"; // Default time for demo
-      await axios.post(`http://localhost:3000/api/appointments`, {
+      const res = await axios.post(`http://localhost:3000/api/appointments`, {
         userId: data?._id || data?.id,
         patientName: data?.username,
         email: data?.email,
@@ -89,7 +90,18 @@ function DoctorAppointments({ data }) {
         date: selectedDate,
         time
       });
-      setBookedAppointment({ ...selectedDoctor, date: selectedDate, time, patientName: data?.username || 'Guest' });
+      
+      const appointmentId = res.data?.appointmentId 
+        ? res.data.appointmentId.slice(-9).toUpperCase() 
+        : Math.random().toString(36).substr(2, 9).toUpperCase();
+
+      setBookedAppointment({ 
+        ...selectedDoctor, 
+        date: selectedDate, 
+        time, 
+        patientName: data?.username || 'Guest',
+        appointmentId 
+      });
       setSelectedDoctor(null);
       setSelectedDate("");
     } catch (err) {
@@ -98,24 +110,81 @@ function DoctorAppointments({ data }) {
   };
 
   const downloadSlip = async () => {
-    if (!slipRef.current) return;
-    
-    slipRef.current.classList.add("bg-white", "text-black");
-    slipRef.current.classList.remove("text-white");
-    
-    const canvas = await html2canvas(slipRef.current, { scale: 2 });
-    
-    slipRef.current.classList.remove("bg-white", "text-black");
-    slipRef.current.classList.add("text-white");
+    try {
+      // Use the manual text approach for maximum reliability
+      const doc = new jsPDF({
+        orientation: "p",
+        unit: "mm",
+        format: "a5"
+      });
 
-    const imgData = canvas.toDataURL("image/png");
-    const pdf = new jsPDF("p", "mm", "a5");
-    
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-    
-    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-    pdf.save(`Appointment_Slip_${bookedAppointment.name.replace(/ /g, '_')}.pdf`);
+      // Header / Branding
+      doc.setFontSize(24);
+      doc.setTextColor(31, 188, 249); // #1FBCF9
+      doc.setFont("helvetica", "bold");
+      doc.text("Arogya Health", 74, 25, { align: "center" });
+
+      doc.setFontSize(10);
+      doc.setTextColor(150);
+      doc.setFont("helvetica", "normal");
+      doc.text("Confirmed Appointment Slip", 74, 32, { align: "center" });
+
+      // Horizontal Line
+      doc.setDrawColor(230);
+      doc.setLineWidth(0.5);
+      doc.line(15, 40, 133, 40);
+
+      // Details Section
+      doc.setFontSize(12);
+      const leftMargin = 20;
+      const labelColor = 100;
+      const valueColor = 0;
+
+      let currentY = 55;
+      const rowGap = 12;
+
+      const drawDetail = (label, value, isAccent = false) => {
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(labelColor);
+        doc.text(label, leftMargin, currentY);
+        
+        doc.setFont("helvetica", "bold");
+        if (isAccent) doc.setTextColor(31, 188, 249);
+        else doc.setTextColor(valueColor);
+        
+        // Handle long addresses by wrapping text if needed
+        const splitValue = doc.splitTextToSize(value || "N/A", 60);
+        doc.text(splitValue, 70, currentY);
+        
+        currentY += (splitValue.length > 1 ? 8 * splitValue.length : rowGap);
+      };
+
+      drawDetail("Patient Name:", bookedAppointment.patientName || "Guest");
+      drawDetail("Doctor:", bookedAppointment.name || "Specialist");
+      drawDetail("Specialization:", bookedAppointment.specialization || "General", true);
+      drawDetail("Date & Time:", `${bookedAppointment.date} at ${bookedAppointment.time}`);
+      drawDetail("Clinic/Hospital:", bookedAppointment.address || "Main Clinic");
+
+      // Footer
+      const footerY = 170; // a5 is 210mm tall
+      doc.setDrawColor(240);
+      doc.line(15, footerY, 133, footerY);
+      
+      doc.setFontSize(9);
+      doc.setTextColor(180);
+      doc.setFont("helvetica", "italic");
+      doc.text("Please arrive 15 minutes prior to your appointment time.", 74, footerY + 10, { align: "center" });
+      
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(150);
+      doc.text(`Appointment ID: ${bookedAppointment.appointmentId}`, 74, footerY + 18, { align: "center" });
+
+      doc.save(`Appointment_Slip_${(bookedAppointment.name || "Doctor").replace(/ /g, '_')}.pdf`);
+    } catch (err) {
+      console.error("PDF generation failed:", err);
+      alert("Failed to generate PDF. If you are using a mobile browser, try a desktop browser or check permissions.");
+    }
   };
 
   if (bookedAppointment) {
@@ -123,6 +192,7 @@ function DoctorAppointments({ data }) {
       <div className="flex flex-col items-center justify-center space-y-6">
         <div 
           ref={slipRef}
+          id="appointment-slip"
           className="bg-black/80 backdrop-blur-md p-10 rounded-2xl border-2 border-[#1FBCF9] w-full max-w-lg shadow-[0_0_50px_rgba(31,188,249,0.3)] text-white relative"
         >
           <div className="text-center border-b border-gray-600 pb-6 mb-6">
@@ -155,7 +225,7 @@ function DoctorAppointments({ data }) {
 
           <div className="mt-8 pt-6 border-t border-gray-600 text-center text-xs text-gray-500">
             <p>Please arrive 15 minutes prior to your appointment time.</p>
-            <p>ID: {Math.random().toString(36).substr(2, 9).toUpperCase()}</p>
+            <p>ID: {bookedAppointment.appointmentId}</p>
           </div>
         </div>
 
